@@ -1,0 +1,1003 @@
+// Space Asteroid Shooter
+// 基于 NPFoundation 框架的 Objective-C 风格游戏
+
+#import <Foundation/Foundation.nh>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <time.h>
+#include <unistd.h>
+
+// ============ 游戏常量 ============
+#define SCREEN_WIDTH  60
+#define SCREEN_HEIGHT 20
+#define MAX_ASTEROIDS 15
+#define MAX_BULLETS   10
+#define MAX_STARS     30
+
+// ============ 颜色代码 ============
+#define COLOR_RESET   "\033[0m"
+#define COLOR_RED     "\033[31m"
+#define COLOR_GREEN   "\033[32m"
+#define COLOR_YELLOW  "\033[33m"
+#define COLOR_BLUE    "\033[34m"
+#define COLOR_MAGENTA "\033[35m"
+#define COLOR_CYAN    "\033[36m"
+#define COLOR_WHITE   "\033[37m"
+#define COLOR_BOLD    "\033[1m"
+
+// ============ 游戏状态 ============
+typedef enum {
+    GameStateMenu,
+    GameStatePlaying,
+    GameStatePaused,
+    GameStateGameOver,
+    GameStateVictory
+} GameState;
+
+// ============ 基础对象类 ============
+@interface NPGameObject : NPObject
+{
+    int x;
+    int y;
+    BOOL active;
+    char symbol;
+    const char* color;
+}
+- (id)initWithX:(int)posX y:(int)posY symbol:(char)sym color:(const char*)col;
+- (void)moveByX:(int)dx y:(int)dy;
+- (void)render;
+- (BOOL)isActive;
+- (void)setActive:(BOOL)flag;
+- (int)getX;
+- (int)getY;
+- (char)getSymbol;
+- (const char*)getColor;
+@end
+
+@implementation NPGameObject
+- (id)initWithX:(int)posX y:(int)posY symbol:(char)sym color:(const char*)col
+{
+    self = [super init];
+    if (self) {
+        x = posX;
+        y = posY;
+        active = YES;
+        symbol = sym;
+        color = col;
+    }
+    return self;
+}
+
+- (void)moveByX:(int)dx y:(int)dy
+{
+    x += dx;
+    y += dy;
+    if (x < 0) x = 0;
+    if (x >= SCREEN_WIDTH) x = SCREEN_WIDTH - 1;
+    if (y < 0) y = 0;
+    if (y >= SCREEN_HEIGHT) y = SCREEN_HEIGHT - 1;
+}
+
+- (void)render
+{
+    if (active && y >= 0 && y < SCREEN_HEIGHT && x >= 0 && x < SCREEN_WIDTH) {
+        printf("\033[%d;%dH%s%c%s", y + 1, x + 1, color, symbol, COLOR_RESET);
+    }
+}
+
+- (BOOL)isActive { return active; }
+- (void)setActive:(BOOL)flag { active = flag; }
+- (int)getX { return x; }
+- (int)getY { return y; }
+- (char)getSymbol { return symbol; }
+- (const char*)getColor { return color; }
+@end
+
+// ============ 玩家飞船 ============
+@interface NPPlayerShip : NPGameObject
+{
+    int health;
+    int maxHealth;
+    int score;
+    int lives;
+    int powerLevel;
+}
+- (id)init;
+- (void)takeDamage:(int)damage;
+- (int)getHealth;
+- (int)getMaxHealth;
+- (int)getScore;
+- (void)addScore:(int)points;
+- (int)getLives;
+- (void)loseLife;
+- (int)getPowerLevel;
+- (void)powerUp;
+@end
+
+@implementation NPPlayerShip
+- (id)init
+{
+    self = [super initWithX:SCREEN_WIDTH / 2 y:SCREEN_HEIGHT - 2 symbol:'A' color:COLOR_CYAN];
+    if (self) {
+        health = 100;
+        maxHealth = 100;
+        score = 0;
+        lives = 3;
+        powerLevel = 1;
+    }
+    return self;
+}
+
+- (void)takeDamage:(int)damage
+{
+    health -= damage;
+    if (health <= 0) {
+        health = 0;
+        [self setActive:NO];
+    }
+}
+
+- (int)getHealth { return health; }
+- (int)getMaxHealth { return maxHealth; }
+- (int)getScore { return score; }
+- (void)addScore:(int)points { score += points; }
+- (int)getLives { return lives; }
+- (void)loseLife { lives--; health = maxHealth; }
+- (int)getPowerLevel { return powerLevel; }
+- (void)powerUp { if (powerLevel < 3) powerLevel++; }
+@end
+
+// ============ 子弹 ============
+@interface NPBullet : NPGameObject
+{
+    int damage;
+    int speed;
+    BOOL isPlayerBullet;
+}
+- (id)initWithX:(int)posX y:(int)posY isPlayer:(BOOL)player;
+- (void)update;
+- (int)getDamage;
+- (BOOL)isPlayerBullet;
+@end
+
+@implementation NPBullet
+- (id)initWithX:(int)posX y:(int)posY isPlayer:(BOOL)player
+{
+    const char* col = player ? COLOR_YELLOW : COLOR_RED;
+    char sym = player ? '|' : 'v';
+    self = [super initWithX:posX y:posY symbol:sym color:col];
+    if (self) {
+        damage = player ? 25 : 10;
+        speed = player ? -1 : 1;
+        isPlayerBullet = player;
+    }
+    return self;
+}
+
+- (void)update
+{
+    int newY = [self getY] + speed;
+    if (newY < 0 || newY >= SCREEN_HEIGHT) {
+        [self setActive:NO];
+    } else {
+        [self moveByX:0 y:speed];
+    }
+}
+
+- (int)getDamage { return damage; }
+- (BOOL)isPlayerBullet { return isPlayerBullet; }
+@end
+
+// ============ 小行星 ============
+@interface NPAsteroid : NPGameObject
+{
+    int health;
+    int maxHealth;
+    int speed;
+    int size;
+    int rotation;
+}
+- (id)initWithX:(int)posX y:(int)posY size:(int)sz;
+- (void)update;
+- (void)takeDamage:(int)damage;
+- (int)getHealth;
+- (int)getSize;
+- (int)getSpeed;
+@end
+
+@implementation NPAsteroid
+- (id)initWithX:(int)posX y:(int)posY size:(int)sz
+{
+    const char* colors[] = {COLOR_RED, COLOR_MAGENTA, COLOR_YELLOW};
+    const char* col = colors[rand() % 3];
+    char symbols[] = {'O', '@', '#', '&', '%'};
+    char sym = symbols[rand() % 5];
+
+    self = [super initWithX:posX y:posY symbol:sym color:col];
+    if (self) {
+        size = sz;
+        maxHealth = sz * 30;
+        health = maxHealth;
+        speed = 1 + rand() % 2;
+        rotation = 0;
+    }
+    return self;
+}
+
+- (void)update
+{
+    rotation++;
+    int newY = [self getY] + speed;
+    if (newY >= SCREEN_HEIGHT) {
+        [self setActive:NO];
+    } else {
+        [self moveByX:0 y:speed];
+    }
+}
+
+- (void)takeDamage:(int)damage
+{
+    health -= damage;
+    if (health <= 0) {
+        health = 0;
+        [self setActive:NO];
+    }
+}
+
+- (int)getHealth { return health; }
+- (int)getSize { return size; }
+- (int)getSpeed { return speed; }
+@end
+
+// ============ 星星背景 ============
+@interface NPStar : NPGameObject
+{
+    int twinkleRate;
+    int twinkleCounter;
+}
+- (id)init;
+- (void)update;
+@end
+
+@implementation NPStar
+- (id)init
+{
+    int px = 1 + rand() % (SCREEN_WIDTH - 2);
+    int py = 1 + rand() % (SCREEN_HEIGHT - 2);
+    const char* starColors[] = {COLOR_WHITE, COLOR_CYAN, COLOR_BLUE};
+    const char* col = starColors[rand() % 3];
+    self = [super initWithX:px y:py symbol:'.' color:col];
+    if (self) {
+        twinkleRate = 5 + rand() % 20;
+        twinkleCounter = 0;
+    }
+    return self;
+}
+
+- (void)update
+{
+    twinkleCounter++;
+    if (twinkleCounter >= twinkleRate) {
+        twinkleCounter = 0;
+        char symbols[] = {'.', '*', '+', '`'};
+        // 这里不能直接修改 symbol，通过重新渲染实现闪烁效果
+    }
+}
+@end
+
+// ============ 道具 ============
+@interface NPPowerUp : NPGameObject
+{
+    int type; // 0=health, 1=power, 2=score
+    int speed;
+}
+- (id)initWithX:(int)posX y:(int)posY type:(int)t;
+- (void)update;
+- (int)getType;
+@end
+
+@implementation NPPowerUp
+- (id)initWithX:(int)posX y:(int)posY type:(int)t
+{
+    const char* colors[] = {COLOR_GREEN, COLOR_CYAN, COLOR_YELLOW};
+    char symbols[] = {'+', 'P', '$'};
+    self = [super initWithX:posX y:posY symbol:symbols[t] color:colors[t]];
+    if (self) {
+        type = t;
+        speed = 1;
+    }
+    return self;
+}
+
+- (void)update
+{
+    int newY = [self getY] + speed;
+    if (newY >= SCREEN_HEIGHT) {
+        [self setActive:NO];
+    } else {
+        [self moveByX:0 y:speed];
+    }
+}
+
+- (int)getType { return type; }
+@end
+
+// ============ 粒子效果 ============
+@interface NPParticle : NPGameObject
+{
+    int lifetime;
+    int maxLifetime;
+    int dx;
+    int dy;
+}
+- (id)initWithX:(int)posX y:(int)posY color:(const char*)col lifetime:(int)lt;
+- (void)update;
+- (int)getLifetime;
+@end
+
+@implementation NPParticle
+- (id)initWithX:(int)posX y:(int)posY color:(const char*)col lifetime:(int)lt
+{
+    char symbols[] = {'*', '+', '.', 'o', 'x'};
+    self = [super initWithX:posX y:posY symbol:symbols[rand() % 5] color:col];
+    if (self) {
+        maxLifetime = lt;
+        lifetime = lt;
+        dx = (rand() % 3) - 1;
+        dy = (rand() % 3) - 1;
+    }
+    return self;
+}
+
+- (void)update
+{
+    lifetime--;
+    if (lifetime <= 0) {
+        [self setActive:NO];
+    } else {
+        [self moveByX:dx y:dy];
+    }
+}
+
+- (int)getLifetime { return lifetime; }
+@end
+
+// ============ 游戏管理器 ============
+@interface NPGameManager : NPObject
+{
+    NPPlayerShip* player;
+    NPBullet* bullets[MAX_BULLETS];
+    NPAsteroid* asteroids[MAX_ASTEROIDS];
+    NPStar* stars[MAX_STARS];
+    NPPowerUp* powerUps[3];
+    NPParticle* particles[50];
+    GameState state;
+    int frameCount;
+    int asteroidSpawnTimer;
+    int powerUpSpawnTimer;
+    int level;
+    int asteroidsDestroyed;
+    int targetAsteroids;
+}
+- (id)init;
+- (void)startGame;
+- (void)showMenu;
+- (void)gameLoop;
+- (void)processInput;
+- (void)update;
+- (void)render;
+- (void)spawnAsteroid;
+- (void)spawnBulletFromPlayer;
+- (void)spawnPowerUp;
+- (void)spawnExplosionAtX:(int)px y:(int)py color:(const char*)col count:(int)cnt;
+- (void)checkCollisions;
+- (void)clearScreen;
+- (void)drawBorder;
+- (void)drawHUD;
+- (void)drawGameOver;
+- (void)drawVictory;
+- (void)resetGame;
+- (BOOL)rectsOverlapX1:(int)x1 y1:(int)y1 w1:(int)w1 h1:(int)h1 x2:(int)x2 y2:(int)y2 w2:(int)w2 h2:(int)h2;
+@end
+
+@implementation NPGameManager
+
+- (id)init
+{
+    self = [super init];
+    if (self) {
+        srand((unsigned int)time(NULL));
+        player = [[NPPlayerShip alloc] init];
+
+        for (int i = 0; i < MAX_BULLETS; i++) bullets[i] = nil;
+        for (int i = 0; i < MAX_ASTEROIDS; i++) asteroids[i] = nil;
+        for (int i = 0; i < MAX_STARS; i++) stars[i] = nil;
+        for (int i = 0; i < 3; i++) powerUps[i] = nil;
+        for (int i = 0; i < 50; i++) particles[i] = nil;
+
+        // 初始化星星背景
+        for (int i = 0; i < MAX_STARS; i++) {
+            stars[i] = [[NPStar alloc] init];
+        }
+
+        state = GameStateMenu;
+        frameCount = 0;
+        asteroidSpawnTimer = 0;
+        powerUpSpawnTimer = 0;
+        level = 1;
+        asteroidsDestroyed = 0;
+        targetAsteroids = 20;
+    }
+    return self;
+}
+
+- (void)startGame
+{
+    [self resetGame];
+    state = GameStatePlaying;
+    [self gameLoop];
+}
+
+- (void)resetGame
+{
+    [player release];
+    player = [[NPPlayerShip alloc] init];
+
+    for (int i = 0; i < MAX_BULLETS; i++) {
+        if (bullets[i]) { [bullets[i] release]; bullets[i] = nil; }
+    }
+    for (int i = 0; i < MAX_ASTEROIDS; i++) {
+        if (asteroids[i]) { [asteroids[i] release]; asteroids[i] = nil; }
+    }
+    for (int i = 0; i < 3; i++) {
+        if (powerUps[i]) { [powerUps[i] release]; powerUps[i] = nil; }
+    }
+    for (int i = 0; i < 50; i++) {
+        if (particles[i]) { [particles[i] release]; particles[i] = nil; }
+    }
+
+    frameCount = 0;
+    asteroidSpawnTimer = 0;
+    powerUpSpawnTimer = 0;
+    level = 1;
+    asteroidsDestroyed = 0;
+    targetAsteroids = 20;
+}
+
+- (void)showMenu
+{
+    [self clearScreen];
+    printf("\n\n");
+    printf("%s", COLOR_CYAN);
+    printf("    ╔═══════════════════════════════════════════════════════════╗\n");
+    printf("    ║                                                           ║\n");
+    printf("    ║     %s★  太 空 小 行 星 射 击 游 戏  ★%s                   ║\n", COLOR_YELLOW, COLOR_CYAN);
+    printf("    ║                                                           ║\n");
+    printf("    ║     驾驶你的飞船，击碎来袭的小行星！                       ║\n");
+    printf("    ║                                                           ║\n");
+    printf("    ║     %s[操作说明]%s                                          ║\n", COLOR_GREEN, COLOR_CYAN);
+    printf("    ║     A / ←  - 向左移动                                     ║\n");
+    printf("    ║     D / →  - 向右移动                                     ║\n");
+    printf("    ║     W / ↑  - 向上移动                                     ║\n");
+    printf("    ║     S / ↓  - 向下移动                                     ║\n");
+    printf("    ║     空格键  - 发射子弹                                    ║\n");
+    printf("    ║     P       - 暂停游戏                                    ║\n");
+    printf("    ║     Q       - 退出游戏                                    ║\n");
+    printf("    ║                                                           ║\n");
+    printf("    ║     %s按 [Enter] 开始游戏%s                                 ║\n", COLOR_YELLOW, COLOR_CYAN);
+    printf("    ║                                                           ║\n");
+    printf("    ╚═══════════════════════════════════════════════════════════╝\n");
+    printf("%s", COLOR_RESET);
+
+    char input[10];
+    fgets(input, sizeof(input), stdin);
+    if (input[0] == 'q' || input[0] == 'Q') {
+        printf("\n再见，宇航员！\n");
+        exit(0);
+    }
+    [self startGame];
+}
+
+- (void)gameLoop
+{
+    struct timespec sleepTime;
+    sleepTime.tv_sec = 0;
+    sleepTime.tv_nsec = 50000000; // 50ms = 20 FPS
+
+    // 设置终端为非缓冲模式（简化版，实际可用 termios）
+    system("stty -icanon -echo");
+
+    while (state == GameStatePlaying || state == GameStatePaused) {
+        if (state == GameStatePlaying) {
+            [self processInput];
+            [self update];
+            [self checkCollisions];
+        }
+        [self render];
+
+        if (state == GameStateGameOver) {
+            [self drawGameOver];
+            break;
+        }
+        if (state == GameStateVictory) {
+            [self drawVictory];
+            break;
+        }
+
+        nanosleep(&sleepTime, NULL);
+        frameCount++;
+    }
+
+    // 恢复终端
+    system("stty icanon echo");
+
+    if (state == GameStateGameOver || state == GameStateVictory) {
+        printf("\n\n%s按 [Enter] 返回主菜单...%s", COLOR_CYAN, COLOR_RESET);
+        char input[10];
+        fgets(input, sizeof(input), stdin);
+        state = GameStateMenu;
+        [self showMenu];
+    }
+}
+
+- (void)processInput
+{
+    char ch;
+    int n = read(STDIN_FILENO, &ch, 1);
+    if (n > 0) {
+        int px = [player getX];
+        int py = [player getY];
+
+        switch (ch) {
+            case 'a':
+            case 'A':
+            case '\x1b': // ESC 序列检测
+                // 处理方向键 ESC[A 等
+                {
+                    char seq[3];
+                    if (read(STDIN_FILENO, &seq[0], 1) > 0 && seq[0] == '[') {
+                        if (read(STDIN_FILENO, &seq[1], 1) > 0) {
+                            switch (seq[1]) {
+                                case 'D': // 左
+                                    if (px > 1) [player moveByX:-2 y:0];
+                                    break;
+                                case 'C': // 右
+                                    if (px < SCREEN_WIDTH - 2) [player moveByX:2 y:0];
+                                    break;
+                                case 'A': // 上
+                                    if (py > 1) [player moveByX:0 y:-1];
+                                    break;
+                                case 'B': // 下
+                                    if (py < SCREEN_HEIGHT - 2) [player moveByX:0 y:1];
+                                    break;
+                            }
+                        }
+                    } else {
+                        if (px > 1) [player moveByX:-2 y:0];
+                    }
+                }
+                break;
+            case 'd':
+            case 'D':
+                if (px < SCREEN_WIDTH - 2) [player moveByX:2 y:0];
+                break;
+            case 'w':
+            case 'W':
+                if (py > 1) [player moveByX:0 y:-1];
+                break;
+            case 's':
+            case 'S':
+                if (py < SCREEN_HEIGHT - 2) [player moveByX:0 y:1];
+                break;
+            case ' ':
+                [self spawnBulletFromPlayer];
+                break;
+            case 'p':
+            case 'P':
+                state = GameStatePaused;
+                break;
+            case 'q':
+            case 'Q':
+                state = GameStateGameOver;
+                break;
+        }
+    }
+}
+
+- (void)update
+{
+    // 更新子弹
+    for (int i = 0; i < MAX_BULLETS; i++) {
+        if (bullets[i] && [bullets[i] isActive]) {
+            [bullets[i] update];
+        }
+    }
+
+    // 更新小行星
+    for (int i = 0; i < MAX_ASTEROIDS; i++) {
+        if (asteroids[i] && [asteroids[i] isActive]) {
+            [asteroids[i] update];
+        }
+    }
+
+    // 更新道具
+    for (int i = 0; i < 3; i++) {
+        if (powerUps[i] && [powerUps[i] isActive]) {
+            [powerUps[i] update];
+        }
+    }
+
+    // 更新粒子
+    for (int i = 0; i < 50; i++) {
+        if (particles[i] && [particles[i] isActive]) {
+            [particles[i] update];
+        }
+    }
+
+    // 更新星星
+    for (int i = 0; i < MAX_STARS; i++) {
+        if (stars[i]) {
+            [stars[i] update];
+        }
+    }
+
+    // 生成小行星
+    asteroidSpawnTimer++;
+    int spawnRate = 30 - (level * 3);
+    if (spawnRate < 10) spawnRate = 10;
+    if (asteroidSpawnTimer >= spawnRate) {
+        asteroidSpawnTimer = 0;
+        [self spawnAsteroid];
+    }
+
+    // 生成道具
+    powerUpSpawnTimer++;
+    if (powerUpSpawnTimer >= 200) {
+        powerUpSpawnTimer = 0;
+        [self spawnPowerUp];
+    }
+
+    // 检查玩家状态
+    if (![player isActive]) {
+        [player loseLife];
+        if ([player getLives] <= 0) {
+            state = GameStateGameOver;
+        } else {
+            [player setActive:YES];
+            // 重置玩家位置
+            // 这里简化处理，实际应该重新初始化位置
+        }
+    }
+
+    // 检查胜利条件
+    if (asteroidsDestroyed >= targetAsteroids) {
+        state = GameStateVictory;
+    }
+}
+
+- (void)spawnAsteroid
+{
+    for (int i = 0; i < MAX_ASTEROIDS; i++) {
+        if (!asteroids[i] || ![asteroids[i] isActive]) {
+            if (asteroids[i]) [asteroids[i] release];
+            int ax = 2 + rand() % (SCREEN_WIDTH - 4);
+            int asize = 1 + rand() % 3;
+            asteroids[i] = [[NPAsteroid alloc] initWithX:ax y:0 size:asize];
+            break;
+        }
+    }
+}
+
+- (void)spawnBulletFromPlayer
+{
+    for (int i = 0; i < MAX_BULLETS; i++) {
+        if (!bullets[i] || ![bullets[i] isActive]) {
+            if (bullets[i]) [bullets[i] release];
+            int bx = [player getX];
+            int by = [player getY] - 1;
+            bullets[i] = [[NPBullet alloc] initWithX:bx y:by isPlayer:YES];
+
+            // 如果火力等级高，发射多发
+            int power = [player getPowerLevel];
+            if (power >= 2) {
+                for (int j = 0; j < MAX_BULLETS; j++) {
+                    if (j != i && (!bullets[j] || ![bullets[j] isActive])) {
+                        if (bullets[j]) [bullets[j] release];
+                        bullets[j] = [[NPBullet alloc] initWithX:bx - 2 y:by isPlayer:YES];
+                        break;
+                    }
+                }
+            }
+            if (power >= 3) {
+                for (int j = 0; j < MAX_BULLETS; j++) {
+                    if (j != i && (!bullets[j] || ![bullets[j] isActive])) {
+                        if (bullets[j]) [bullets[j] release];
+                        bullets[j] = [[NPBullet alloc] initWithX:bx + 2 y:by isPlayer:YES];
+                        break;
+                    }
+                }
+            }
+            break;
+        }
+    }
+}
+
+- (void)spawnPowerUp
+{
+    for (int i = 0; i < 3; i++) {
+        if (!powerUps[i] || ![powerUps[i] isActive]) {
+            if (powerUps[i]) [powerUps[i] release];
+            int px = 2 + rand() % (SCREEN_WIDTH - 4);
+            int ptype = rand() % 3;
+            powerUps[i] = [[NPPowerUp alloc] initWithX:px y:0 type:ptype];
+            break;
+        }
+    }
+}
+
+- (void)spawnExplosionAtX:(int)px y:(int)py color:(const char*)col count:(int)cnt
+{
+    for (int i = 0; i < 50 && cnt > 0; i++) {
+        if (!particles[i] || ![particles[i] isActive]) {
+            if (particles[i]) [particles[i] release];
+            int offsetX = (rand() % 5) - 2;
+            int offsetY = (rand() % 5) - 2;
+            int lt = 5 + rand() % 10;
+            particles[i] = [[NPParticle alloc] initWithX:px + offsetX y:py + offsetY color:col lifetime:lt];
+            cnt--;
+        }
+    }
+}
+
+- (BOOL)rectsOverlapX1:(int)x1 y1:(int)y1 w1:(int)w1 h1:(int)h1 x2:(int)x2 y2:(int)y2 w2:(int)w2 h2:(int)h2
+{
+    return (x1 < x2 + w2 && x1 + w1 > x2 && y1 < y2 + h2 && y1 + h1 > y2);
+}
+
+- (void)checkCollisions
+{
+    // 子弹与小行星碰撞
+    for (int i = 0; i < MAX_BULLETS; i++) {
+        if (bullets[i] && [bullets[i] isActive] && [bullets[i] isPlayerBullet]) {
+            int bx = [bullets[i] getX];
+            int by = [bullets[i] getY];
+
+            for (int j = 0; j < MAX_ASTEROIDS; j++) {
+                if (asteroids[j] && [asteroids[j] isActive]) {
+                    int ax = [asteroids[j] getX];
+                    int ay = [asteroids[j] getY];
+                    int asize = [asteroids[j] getSize];
+
+                    if ([self rectsOverlapX1:bx y1:by w1:1 h1:1 x2:ax y2:ay w2:asize h2:asize]) {
+                        [asteroids[j] takeDamage:[bullets[i] getDamage]];
+                        [bullets[i] setActive:NO];
+
+                        if (![asteroids[j] isActive]) {
+                            [self spawnExplosionAtX:ax y:ay color:[asteroids[j] getColor] count:8];
+                            [player addScore:10 * asize];
+                            asteroidsDestroyed++;
+
+                            // 升级检查
+                            if (asteroidsDestroyed % 10 == 0) {
+                                level++;
+                                targetAsteroids += 10;
+                            }
+                        } else {
+                            [self spawnExplosionAtX:bx y:by color:COLOR_YELLOW count:3];
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    // 玩家与小行星碰撞
+    int px = [player getX];
+    int py = [player getY];
+
+    for (int i = 0; i < MAX_ASTEROIDS; i++) {
+        if (asteroids[i] && [asteroids[i] isActive]) {
+            int ax = [asteroids[i] getX];
+            int ay = [asteroids[i] getY];
+            int asize = [asteroids[i] getSize];
+
+            if ([self rectsOverlapX1:px y1:py w1:1 h1:1 x2:ax y2:ay w2:asize h2:asize]) {
+                [player takeDamage:20 * asize];
+                [asteroids[i] setActive:NO];
+                [self spawnExplosionAtX:ax y:ay color:COLOR_RED count:12];
+                [self spawnExplosionAtX:px y:py color:COLOR_CYAN count:8];
+            }
+        }
+    }
+
+    // 玩家与道具碰撞
+    for (int i = 0; i < 3; i++) {
+        if (powerUps[i] && [powerUps[i] isActive]) {
+            int pux = [powerUps[i] getX];
+            int puy = [powerUps[i] getY];
+
+            if ([self rectsOverlapX1:px y1:py w1:1 h1:1 x2:pux y2:puy w2:1 h2:1]) {
+                int ptype = [powerUps[i] getType];
+                switch (ptype) {
+                    case 0: // 生命恢复
+                        // health += 30 (简化)
+                        break;
+                    case 1: // 火力升级
+                        [player powerUp];
+                        break;
+                    case 2: // 分数
+                        [player addScore:50];
+                        break;
+                }
+                [powerUps[i] setActive:NO];
+                [self spawnExplosionAtX:pux y:puy color:COLOR_GREEN count:5];
+            }
+        }
+    }
+}
+
+- (void)render
+{
+    [self clearScreen];
+    [self drawBorder];
+
+    // 渲染星星
+    for (int i = 0; i < MAX_STARS; i++) {
+        if (stars[i]) [stars[i] render];
+    }
+
+    // 渲染道具
+    for (int i = 0; i < 3; i++) {
+        if (powerUps[i] && [powerUps[i] isActive]) [powerUps[i] render];
+    }
+
+    // 渲染小行星
+    for (int i = 0; i < MAX_ASTEROIDS; i++) {
+        if (asteroids[i] && [asteroids[i] isActive]) [asteroids[i] render];
+    }
+
+    // 渲染子弹
+    for (int i = 0; i < MAX_BULLETS; i++) {
+        if (bullets[i] && [bullets[i] isActive]) [bullets[i] render];
+    }
+
+    // 渲染粒子
+    for (int i = 0; i < 50; i++) {
+        if (particles[i] && [particles[i] isActive]) [particles[i] render];
+    }
+
+    // 渲染玩家
+    if ([player isActive]) [player render];
+
+    // 渲染 HUD
+    [self drawHUD];
+
+    // 暂停提示
+    if (state == GameStatePaused) {
+        printf("\033[%d;%dH%s[ 游 戏 暂 停 - 按 P 继续 ]%s", 
+               SCREEN_HEIGHT / 2 + 1, SCREEN_WIDTH / 2 - 12, COLOR_YELLOW, COLOR_RESET);
+    }
+
+    fflush(stdout);
+}
+
+- (void)clearScreen
+{
+    printf("\033[2J\033[H");
+}
+
+- (void)drawBorder
+{
+    printf("%s", COLOR_BLUE);
+    // 上边框
+    printf("\033[1;1H┌");
+    for (int i = 0; i < SCREEN_WIDTH - 2; i++) printf("─");
+    printf("┐");
+    // 下边框
+    printf("\033[%d;1H└", SCREEN_HEIGHT);
+    for (int i = 0; i < SCREEN_WIDTH - 2; i++) printf("─");
+    printf("┘");
+    // 左右边框
+    for (int i = 1; i < SCREEN_HEIGHT - 1; i++) {
+        printf("\033[%d;1H│", i + 1);
+        printf("\033[%d;%dH│", i + 1, SCREEN_WIDTH);
+    }
+    printf("%s", COLOR_RESET);
+}
+
+- (void)drawHUD
+{
+    printf("%s", COLOR_GREEN);
+    printf("\033[%d;2H 生命: %d  分数: %d  等级: %d  目标: %d/%d  火力: Lv%d",
+           SCREEN_HEIGHT + 1, [player getLives], [player getScore], 
+           level, asteroidsDestroyed, targetAsteroids, [player getPowerLevel]);
+    printf("%s", COLOR_RESET);
+
+    // 血条
+    int health = [player getHealth];
+    int maxHealth = [player getMaxHealth];
+    int barWidth = 20;
+    int filled = (health * barWidth) / maxHealth;
+
+    printf("\033[%d;2H 血量: [", SCREEN_HEIGHT + 2);
+    if (health > 60) printf("%s", COLOR_GREEN);
+    else if (health > 30) printf("%s", COLOR_YELLOW);
+    else printf("%s", COLOR_RED);
+
+    for (int i = 0; i < filled; i++) printf("█");
+    printf("%s", COLOR_RESET);
+    for (int i = filled; i < barWidth; i++) printf("░");
+    printf("] %d/%d", health, maxHealth);
+
+    printf("\033[%d;2H [A/D/方向键移动] [空格射击] [P暂停] [Q退出]", SCREEN_HEIGHT + 3);
+}
+
+- (void)drawGameOver
+{
+    [self clearScreen];
+    printf("\n\n");
+    printf("%s", COLOR_RED);
+    printf("    ╔═══════════════════════════════════════════════════════════╗\n");
+    printf("    ║                                                           ║\n");
+    printf("    ║              %s★  游 戏 结 束  ★%s                          ║\n", COLOR_RED, COLOR_RED);
+    printf("    ║                                                           ║\n");
+    printf("    ║     最终分数: %s%d%s                                        \n", COLOR_YELLOW, [player getScore], COLOR_RED);
+    printf("    ║     击毁小行星: %s%d%s                                    \n", COLOR_YELLOW, asteroidsDestroyed, COLOR_RED);
+    printf("    ║     到达等级: %s%d%s                                      \n", COLOR_YELLOW, level, COLOR_RED);
+    printf("    ║                                                           ║\n");
+    printf("    ║     宇宙需要新的英雄...                                   ║\n");
+    printf("    ║                                                           ║\n");
+    printf("    ╚═══════════════════════════════════════════════════════════╝\n");
+    printf("%s", COLOR_RESET);
+}
+
+- (void)drawVictory
+{
+    [self clearScreen];
+    printf("\n\n");
+    printf("%s", COLOR_GREEN);
+    printf("    ╔═══════════════════════════════════════════════════════════╗\n");
+    printf("    ║                                                           ║\n");
+    printf("    ║           %s★  胜 利 ！宇 宙 安 全 了  ★%s                  ║\n", COLOR_YELLOW, COLOR_GREEN);
+    printf("    ║                                                           ║\n");
+    printf("    ║     最终分数: %s%d%s                                        \n", COLOR_YELLOW, [player getScore], COLOR_GREEN);
+    printf("    ║     击毁小行星: %s%d%s                                    \n", COLOR_YELLOW, asteroidsDestroyed, COLOR_GREEN);
+    printf("    ║     到达等级: %s%d%s                                      \n", COLOR_YELLOW, level, COLOR_GREEN);
+    printf("    ║                                                           ║\n");
+    printf("    ║     你是宇宙的守护者！                                    ║\n");
+    printf("    ║                                                           ║\n");
+    printf("    ╚═══════════════════════════════════════════════════════════╝\n");
+    printf("%s", COLOR_RESET);
+}
+
+- (void)dealloc
+{
+    [player release];
+    for (int i = 0; i < MAX_BULLETS; i++) if (bullets[i]) [bullets[i] release];
+    for (int i = 0; i < MAX_ASTEROIDS; i++) if (asteroids[i]) [asteroids[i] release];
+    for (int i = 0; i < MAX_STARS; i++) if (stars[i]) [stars[i] release];
+    for (int i = 0; i < 3; i++) if (powerUps[i]) [powerUps[i] release];
+    for (int i = 0; i < 50; i++) if (particles[i]) [particles[i] release];
+    [super dealloc];
+}
+
+@end
+
+// ============ 程序入口 ============
+int main(int argc, const char* argv[])
+{
+    @autoreleasepool {
+        printf("\033[?25l"); // 隐藏光标
+
+        NPGameManager* game = [[NPGameManager alloc] init];
+        [game showMenu];
+        [game release];
+
+        printf("\033[?25h"); // 显示光标
+        printf("\033[2J\033[H");
+        printf("感谢游玩！\n");
+    }
+    return 0;
+}

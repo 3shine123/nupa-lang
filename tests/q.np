@@ -1,0 +1,39 @@
+#include <stdio.h>
+
+#import <Foundation/Foundation.nh>
+
+@interface Person : NPObject 
+
+- (void)speak;
+
+@end
+
+@implementation Person
+
+- (void)speak {
+    printf("Hello, world!\n");
+}
+
+@end
+
+@interface Student : Person
+
+- (void)talk;
+
+@end
+
+@implementation Student
+
+- (void)talk {
+    [super speak];
+}
+
+@end
+
+int main(int argc, const char * argv[]) {
+    @autoreleasepool {
+        Student *s = [[Student alloc] init];
+        [s talk];
+    }
+    return 0;
+}

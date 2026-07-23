@@ -1,0 +1,8 @@
+[package]
+name = "nupa-parser"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+nupa-lexer = { path = "../lexer" }
+nupa-cst = { path = "../cst" }

@@ -1,0 +1,20 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/lexer",
+    "crates/cst",
+    "crates/cst_visit",
+    "crates/parser",
+    "crates/ast",
+    "crates/symbol",
+    "crates/binder",
+    "crates/checker",
+    "crates/elaborator",
+    "crates/cfg",
+    "crates/layout",
+    "crates/ownership",
+    "crates/arc",
+    "crates/codegen",
+    "crates/preprocessor",
+    "crates/nupac",
+]

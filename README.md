@@ -1,0 +1,754 @@
+# [-> 中文](CHINESE.md)
+
+# Nupa Programming Language
+
+[Overview](#overview) · [Why Nupa?](#why-nupa) · [Quick Start](#quick-start) · [Language Features](#language-features) · [New Features](#new-features) · [Compilation & CLI](#compilation--cli) · [Code Examples](#code-examples) · [Design Principles](#design-principles) · [Roadmap](#roadmap) · [FAQ](#faq)
+
+---
+
+## **Overview**
+
+Nupa is a **purely static** Objective-C dialect (C superset language). Nupa source is transpiled to C99, then compiled to native machine code by Clang. No runtime message forwarding, no GC pauses, no JIT warm-up — all method dispatch, memory management, and polymorphism are resolved at compile time. It currently works — there are games and tools running in it. If you find it interesting, feel free to give it a try.
+
+I don't intend to replace ObjC or Swift. I just miss ObjC's syntax and wanted to let it live again in a statically compiled world. ☺️
+
+---
+
+## Why Nupa?
+
+I simply like ObjC's message send syntax `[obj message]`. ObjC's runtime (`objc_msgSend`) is heavy, and I wanted to write ObjC-like code that compiles straight to C — so Nupa was born: ObjC syntax compiled statically, no runtime dependency, generating clean C.
+
+This is not a production-ready language. It's a toy, exploring the question: "what happens if you transpile ObjC into plain static C?"
+
+### What it does
+
+- Method calls → compile-time VTable offsets, no objc_msgSend
+- Memory management → CFG static analysis, retain/release decided at compile time
+- Output → human-readable C99, not compiler IR
+
+### Design Goals
+
+- **Fun**: that's the most important one
+- **Readable**: generated C is meant to be read by humans
+- **Lightweight**: just one small static runtime
+
+---
+
+## Quick Start
+
+### Dependencies
+
+- Clang (>= 14)
+- Rust (stable, with cargo)
+- Git
+
+### Build
+
+```bash
+git clone https://github.com/3shine123/nupa-lang.git
+cd nupa-lang
+cargo build
+```
+
+### Compile a Nupa Program
+
+```bash
+# Just output C code (auto-derives .np → .c)
+nupac --rewrite-nupa hello.np
+nupac hello.np --rewrite-nupa              # flag works anywhere
+nupac --rewrite-nupa hello.np -o out.c     # explicit path also works
+
+# Compile and translate the C code alone using Clang
+clang -I include -o hello hello.c include/nupa/runtime.c
+
+# Output object file directly
+nupac hello.np -o hello.o                  # -c mode, no linking
+
+# Compile to executable
+nupac hello.np -o hello_bin                # transpile + compile + link
+
+# Compile + run
+nupac run hello.np
+nupac run hello.np -o hello_bin            # keep binary after run
+nupac run hello.np                          # auto-clean temp binary
+
+# Show compilation warnings
+nupac -v run hello.np
+
+# [!] Error: .c output without --rewrite-nupa
+nupac hello.np -o hello.c   → Error: use --rewrite-nupa to output C code
+
+# [!] Error: no output method specified
+nupac hello.np              → Error: specify -o or --rewrite-nupa
+```
+
+### Run Tests
+
+```bash
+# Run all tests
+./test_all.sh -j4
+
+# Run Rust unit tests
+cargo test --workspace
+```
+
+---
+
+## Language Features
+
+### Class System
+
+```nupa
+@interface Animal : NPObject {
+@public
+    NPString *_name;
+}
+- (instancetype)initWithName:(NPString *)name;
+- (void)speak;
+@property (readonly) NPString *name;
+@end
+
+@implementation Animal
+- (instancetype)initWithName:(NPString *)name {
+    self = [super init];
+    if (self) {
+        _name = name;
+    }
+    return self;
+}
+- (void)speak {
+    printf("...\n");
+}
+@end
+```
+
+### Protocol
+
+```nupa
+@protocol Drawable
+- (void)draw;
+- (BOOL)isVisible;
+@end
+
+@interface Shape : NPObject <Drawable>
+@end
+```
+
+### Properties
+
+```nupa
+@interface Person : NPObject
+@property NPString *name;
+@property int age;
+@property (readonly) NPString *identifier;
+@end
+```
+
+### Category
+
+```nupa
+@interface Person (Printing)
+- (void)printGreeting;
+@end
+
+@implementation Person (Printing)
+- (void)printGreeting {
+    printf("Hello, my name is %s\n", [self name]);
+}
+@end
+```
+
+### Block
+
+```nupa
+int (^square)(int) = ^int(int x) {
+    return x * x;
+};
+
+void (^logAndCall)(NPString *, void (^)(void)) = ^void(NPString *msg, void (^next)(void)) {
+    printf("[LOG] %s\n", msg);
+    if (next) next();
+};
+```
+
+### @autoreleasepool
+
+```nupa
+@autoreleasepool {
+    NPString *temp = [NPString stringWithUTF8String:"hello"];
+    // temp is released when the pool pops
+}
+```
+
+### @selector
+
+```nupa
+SEL sel = @selector(doSomething:);
+```
+
+### Full C Compatibility
+
+```nupa
+#include <stdio.h>
+#include <stdlib.h>
+
+@interface Wrapper : NPObject
+- (void)callCFunction;
+@end
+```
+
+### Memory Management
+
+Nupa uses **compile-time static ARC**. The compiler determines each object reference's lifetime through CFG dataflow analysis and inserts retain/release calls automatically. No manual `retain`/`release`/`autorelease` needed.
+
+In MRC mode (`-fno-nupa-arc`):
+
+```nupa
+NPObject *obj = [[NPObject alloc] init];
+// ... use obj ...
+[obj release]; // MRC manual release
+```
+
+---
+
+## New Features
+
+Nupa adds features on top of Objective-C syntax that ObjC itself doesn't have.
+
+### Implicit Root Class (`__nupa_root`)
+
+Nupa now supports user-defined root classes. You no longer need to inherit from `NPObject` — an `@interface` without a superclass automatically gets a compiler-injected implicit root class `__nupa_root`, while keeping `id` type uniformity and static dispatch.
+
+**Before:**
+
+```nupa
+@interface Animal : NPObject   // had to inherit NPObject
+```
+
+**After:**
+
+```nupa
+@interface Animal              // no superclass → implicit root class
+@interface Animal : NPObject   // explicit NPObject still works
+```
+
+Both are valid, and `id` can point to any Nupa object.
+
+#### How It Works
+
+When no superclass is specified, the compiler injects `__nupa_root`:
+
+```nupa
+// User code:
+@interface Animal {
+    int age;
+}
+- (void)speak;
+@end
+
+// Compiler treats as:
+@interface Animal : __nupa_root {
+    int age;
+}
+- (void)speak;
+@end
+```
+
+Generated C code:
+
+```c
+// Built-in structures
+struct nupa_object_header {
+    struct nupa_vtable *vtable;
+};
+
+struct __nupa_root {
+    struct nupa_object_header header;
+};
+
+// Animal's struct
+struct Animal {
+    struct __nupa_root __super;  // contains header
+    int age;
+};
+```
+
+#### `id` Type
+
+```c
+typedef struct __nupa_root *nupa_id_t;
+```
+
+`id` is no longer tied to `NPObject` — it only requires the object to start with `__nupa_root`. This means:
+
+```nupa
+Animal *a = [[Animal alloc] init];
+id obj = a;                    // valid: Animal inherits from __nupa_root
+[obj speak];                   // static dispatch: obj->header.vtable[...]
+```
+
+#### Explicit Inheritance Still Works
+
+```nupa
+@interface Dog : Animal {
+    NSString *breed;
+}
+@end
+```
+
+Generated C:
+
+```c
+struct Dog {
+    struct Animal __super;     // contains __nupa_root → header
+    struct NSString *breed;
+};
+```
+
+#### `NPObject` vs `__nupa_root`
+
+| Declaration                 | Means                               | Use Case                        |
+| --------------------------- | ----------------------------------- | ------------------------------- |
+| `@interface Xxx`            | Implicit `__nupa_root`, lightweight | Custom layout, kernel, embedded |
+| `@interface Xxx : NPObject` | Explicit NPObject, full runtime     | User apps, ARC, retain/release  |
+
+```nupa
+// Lightweight root class, no refcounting overhead
+@interface KernelTask {
+    int pid;
+    int priority;
+}
+- (void)run;
+@end
+
+// Full NPObject with automatic memory management
+@interface UserModel : NPObject
+@property NSString *name;
+@end
+```
+
+#### Method Dispatch
+
+All Nupa objects dispatch through a unified VTable mechanism:
+
+```c
+// [obj doSomething:arg]
+obj->header.vtable[INDEX_doSomething](obj, arg);
+```
+
+The compiler assigns a fixed global index to each selector. All classes place the function pointer for the same selector at the same VTable position. If a class doesn't implement a method, the slot holds the parent's implementation or NULL.
+
+#### Kernel-Friendly Design
+
+The object header is minimal:
+
+```c
+struct nupa_object_header {
+    struct nupa_vtable *vtable;
+    // no retain count, no flags
+};
+```
+
+Reference counting is managed by compile-time static ARC analysis, not stored in the object. `nupa_id_t` is a plain C pointer (8 bytes on 64-bit), zero ABI overhead for passing, assigning, and array storage.
+
+#### Status
+
+   Implemented:
+
+- [x] Implicit root class injection (semantic analysis)
+- [x] `__nupa_root` and `nupa_object_header` C code generation
+- [x] `id` → `nupa_id_t` type mapping
+- [x] Unified VTable index allocation
+- [x] Root/subclass struct generation
+- [x] Unit test coverage
+
+### @namespace
+
+`@namespace` organizes classes, functions, and constants, avoiding global name collisions. This is a feature ObjC lacks — traditional ObjC relies on prefix conventions (e.g., `NS`, `UI`) to simulate namespacing.
+
+```nupa
+@namespace Game {
+    @interface Player : NPObject {
+        int health;
+    }
+    - (id)init;
+    - (int)getHealth;
+    @end
+
+    @implementation Player
+    - (id)init {
+        self = [super init];
+        if (self) health = 100;
+        return self;
+    }
+    - (int)getHealth { return health; }
+    @end
+}
+
+@namespace UI {
+    @interface HUD : NPObject {}
+    - (void)showPlayerHealth:(Game::Player *)player;
+    @end
+}
+```
+
+**Encoding rules**: `::` separators are encoded as `__` in C symbols.
+
+| Nupa Symbol                   | Transpiled C Symbol          |
+| ----------------------------- | ---------------------------- |
+| `Game::Player`                | `nupa_Game__Player`          |
+| `Game::Entities::Enemy`       | `nupa_Game__Entities__Enemy` |
+| Method `-[Game::Player init]` | `Game__Player_init`          |
+| VTable                        | `nupa_Game__Player_vtable`   |
+| Class metadata                | `nupa_Game__Player_class`    |
+
+**Features**:
+
+- Nested namespaces supported (`Game::Entities::Enemy`)
+- Cross-namespace references (`Game::Player *player`)
+- No prefix convention needed — C symbols are encoded automatically
+- Classes without namespaces remain backward-compatible
+
+#### @using Import Mechanism
+
+`@using` imports symbols from other namespaces into the current scope, avoiding the need to write fully qualified names each time. Three forms are supported:
+
+**Form 1: Import a fully qualified name**
+
+```nupa
+@using Game::Player;
+Game::Player *p = [[Game::Player alloc] init];
+// After @using, the short name Player can be used instead
+Player *p = [[Player alloc] init];
+```
+
+**Form 2: Import with an alias**
+
+```nupa
+@using GP = Game::Player;
+// GP is an alias for Game::Player
+GP *p = [[GP alloc] init];
+```
+
+**Form 3: Import an entire namespace**
+
+```nupa
+@using namespace Game;
+// All classes under Game can be accessed by short name
+Player *p = [[Player alloc] init];
+Enemy *e = [[Enemy alloc] init];
+```
+
+**Conflict detection**:
+
+- If a short name conflicts with an existing symbol in the current scope, the compiler reports an error
+- If two `@using` entries import the same short name, the compiler reports an ambiguity error
+- Aliases and short names are valid within the file scope of the `@using` declaration
+
+---
+
+## Compilation & CLI
+
+### Command-Line Options
+
+```bash
+nupac [options] <input.np>
+
+Modes:
+  (none)            Default: transpile + compile to binary (requires -o)
+  run               Transpile + compile + run (auto-clean temp binary)
+
+Options:
+  -o <file>         Output file (.o produces object file, otherwise executable)
+  -H <header.h>     Generate header from .nh
+  -I <dir>          Add include search path
+  -L <dir>          Add library search path
+  -v, --verbose     Show verbose output (including Clang warnings)
+  --version         Show version number
+  --rewrite-nupa    Output C code only (no compilation)
+  -fno-nupa-arc     Disable ARC (manual MRC mode)
+```
+
+### Build System Integration
+
+**cargo**:
+
+```bash
+cargo build
+cargo test --workspace
+```
+
+---
+
+## Code Examples
+
+### Hello World
+
+```nupa
+#include <stdio.h>
+#import <Foundation/Foundation.nh>
+
+@interface Greeter : NPObject
+- (void)greet;
+@end
+
+@implementation Greeter
+- (void)greet {
+    printf("Hello, Nupa!\n");
+}
+@end
+
+int main() {
+    @autoreleasepool {
+        Greeter *g = [[Greeter alloc] init];
+        [g greet];
+    }
+    return 0;
+}
+```
+
+### Polymorphism
+
+```nupa
+@interface Animal : NPObject
+- (void)speak;
+@end
+
+@interface Dog : Animal
+@end
+
+@interface Cat : Animal
+@end
+
+@implementation Animal
+- (void)speak { printf("...\n"); }
+@end
+
+@implementation Dog
+- (void)speak { printf("Woof!\n"); }
+@end
+
+@implementation Cat
+- (void)speak { printf("Meow!\n"); }
+@end
+
+int main() {
+    Animal *animals[2];
+    animals[0] = [[Dog alloc] init];
+    animals[1] = [[Cat alloc] init];
+    for (int i = 0; i < 2; i++)
+        [animals[i] speak];  // VTable static dispatch
+    return 0;
+}
+```
+
+### Block + ARC
+
+```nupa
+typedef void (^EventHandler)(int code, NPString *msg);
+
+@interface Engine : NPObject
+- (void)onEvent:(EventHandler)handler;
+@end
+
+int main() {
+    @autoreleasepool {
+        Engine *e = [[Engine alloc] init];
+        int captured = 42;
+        [e onEvent:^void(int code, NPString *msg) {
+            printf("code=%d msg=%s captured=%d\n", code, msg, captured);
+        }];
+    }
+    return 0;
+}
+```
+
+### Static Generics
+
+Nupa compiles generics at compile time via **monomorphization** — each `DataPack<QuantumToken *>` becomes a standalone C struct `DataPack_QuantumToken_ptr` with concrete type substitutions. No type erasure, no boxing, no runtime overhead.
+
+```nupa
+@interface DataPack<T> : NPObject {
+    @public
+    int _count;
+    T _storage[2];
+}
+- (void)pushItem:(T)item;
+- (T)popItem;
+@end
+
+@implementation DataPack
+- (void)pushItem:(T)item {
+    if (_count < 2) {
+        _storage[_count++] = item;
+    }
+}
+- (T)popItem {
+    if (_count > 0) {
+        _count--;
+        T item = _storage[_count];
+        _storage[_count] = 0;
+        return nupa_autorelease(item);
+    }
+    return 0;
+}
+@end
+
+int main() {
+    @autoreleasepool {
+        // Each instantiation generates specialized C code
+        DataPack<QuantumToken *> *tokenPack = [[DataPack<QuantumToken *> alloc] init];
+        DataPack<EncryptedMetric *> *metricPack = [[DataPack<EncryptedMetric *> alloc] init];
+    }
+    return 0;
+}
+```
+
+**How it works**:
+
+- `DataPack<T>` → `struct DataPack` (generic) is skipped; only specialized structs are emitted
+- `DataPack<QuantumToken *>` → `struct DataPack_QuantumToken_ptr` with `QuantumToken * _storage[2]`
+- Methods are cloned per instantiation with substituted return/param/body types
+- VTable, meta VTable, and class metadata are generated per instantiation
+- Type name encoding: `DataPack<QuantumToken *>` → `DataPack_QuantumToken_ptr`
+
+**Status**: ✅ Fully implemented for single type parameter. Multiple parameters (`<K, V>`) in progress.
+
+---
+
+## Design Principles
+
+### 1. Static > Dynamic
+
+ObjC's runtime is powerful, but I don't want to depend on it. Make all decisions at compile time — what you generate is what runs, no surprises.
+
+- Method dispatch → VTable offsets
+- Memory management → CFG static analysis
+- Protocol conformance → compile-time checks
+
+### 2. Generate Human-Readable C
+
+Nupa's "backend" is **human-readable C99**, not LLVM IR. This means:
+
+- Debug with standard Clang/LLDB tools
+- Generated C can be reviewed, modified, embedded in other projects
+- No LLVM backend lock-in — wherever Clang runs, Nupa runs
+
+### 3. Incremental
+
+Start from a class system, add things gradually:
+
+- ✅ Class/Protocol/Category/Properties
+- ✅ Block / @autoreleasepool
+- ✅ Static ARC
+- ✅ @selector / VTable polymorphism
+- ✅ @namespace
+- ⏳ Foundation standard library
+- ⏳ Exception handling
+- ⏳ Compiler self-hosting
+
+### 4. Readability
+
+Generated C should be as clear as handwritten C:
+
+- `struct` + `->` for ivar access
+- `static const SEL` constants
+- Consistent and predictable naming
+- Explicit temporary variable names
+
+---
+
+## Roadmap
+
+### Phase 1: Infrastructure ✅
+
+- [x] Lexer
+- [x] Preprocessor
+- [x] Parser
+- [x] CST validation & printing
+
+### Phase 2: Semantic Analysis ✅
+
+- [x] Symbol table
+- [x] Name binding
+- [x] Type checking
+- [x] Property elaboration
+- [x] Protocol conformance
+
+### Phase 3: VTable + Object Layout ✅
+
+- [x] VTable layout
+- [x] Object memory layout
+- [x] Class metadata
+
+### Phase 4: Intermediate Representation ✅
+
+- [x] Typed AST
+- [x] CST → AST
+- [x] CFG construction
+
+### Phase 5: Static ARC ✅
+
+- [x] Ownership inference
+- [x] Local + global ARC
+- [x] Retain/Release insertion
+- [x] ARC verification
+
+### Phase 6: C99 Code Generation ✅
+
+- [x] C99 AST
+- [x] AST → C99 conversion
+- [x] Header generation
+- [x] Compiler options
+
+### Phase 7: Runtime ✅
+
+- [x] Core retain/release/alloc/init
+- [x] Autorelease pool
+
+### Phase 8-10: In Progress
+
+- [ ] Foundation standard library
+
+- [x] Block runtime
+
+- [x] Weak references
+
+- [✅] Generics (monomorphization)
+
+- [ ] Exception handling
+
+- [ ] Debug information
+
+- [x] VSCode/IDE support
+
+---
+
+## FAQ
+
+### **Is it production-ready?**
+
+Not yet. But it is **real** - it compiles, it runs, and it is designed with growth in mind. If you find syntax appealing and want to contributem, you are welcome.
+
+### What can Nupa do?
+
+Write small games, tools, toys. The snake game, Flappy Bird, space shooter, tic-tac-toe in this repo are all written in Nupa, running in the terminal.
+
+### What's missing compared to ObjC?
+
+- No `objc_msgSend` — VTable static dispatch
+- No runtime Method Swizzling
+- No `forwardInvocation:`
+- Selectors are compile-time constants, not runtime strings
+
+### Why C99 as output?
+
+Because C99 compiles everywhere. Generate human-readable C, compile with Clang, debug with lldb. No need to bind to any specific backend.
+
+---
+
+## License
+
+MIT License
+
+Copyright (c) 2026 3shine123

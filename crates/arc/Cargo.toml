@@ -1,0 +1,9 @@
+[package]
+name = "nupa-arc"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+nupa-ast = { path = "../ast" }
+nupa-cfg = { path = "../cfg" }
+nupa-ownership = { path = "../ownership" }

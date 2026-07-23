@@ -1,0 +1,20 @@
+CompileFlags:
+  Add:
+    - "-std=c99"
+    - "-I${workspaceRoot}/include"
+    - "-I${workspaceRoot}/transpiler/include"
+    - "-I${workspaceRoot}/builddir"
+    - "-DNUPA_VERSION=\"0.1.0\""
+    - "-Wall"
+    - "-Wextra"
+    - "-Wpedantic"
+  CompilationDatabase: builddir
+
+Diagnostics:
+  UnusedIncludes: Strict
+  Suppress:
+    - "implicit-function-declaration"
+    - "typedef-redefinition"
+
+Index:
+  Background: Build

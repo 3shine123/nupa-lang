@@ -1,0 +1,6 @@
+#include <stdint.h>
+#include <stddef.h>
+
+#include "nupa/runtime.h"
+
+#import "NPObject.nh"

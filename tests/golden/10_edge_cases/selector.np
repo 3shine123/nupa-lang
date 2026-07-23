@@ -1,0 +1,21 @@
+#include <stdio.h>
+#import <Foundation/Foundation.nh>
+
+@interface Foo : NPObject
+- (void)bar:(int)x;
+@end
+
+@implementation Foo
+- (void)bar:(int)x {
+    printf("bar:%d\n", x);
+}
+@end
+
+int main() {
+    unsigned s1 = @selector(bar:);
+    unsigned s2 = @selector(bar:);
+    if (s1 == s2) {
+        printf("stable\n");
+    }
+    return 0;
+}
