@@ -1,4 +1,4 @@
-# [-> 中文](CHINESE.md)
+[-> 中文](CHINESE.md)
 
 # Nupa Programming Language
 
@@ -75,7 +75,7 @@ nupac run hello.np                          # auto-clean temp binary
 # Show compilation warnings
 nupac -v run hello.np
 
-# [!] Error: .c output without --rewrite-nupa
+# [!] Error: .c output without -rewrite-nupa
 nupac hello.np -o hello.c   → Error: use --rewrite-nupa to output C code
 
 # [!] Error: no output method specified

@@ -1,4 +1,4 @@
-# [-> English](README.md)
+[-> English](README.md)
 
 # Nupa 编程语言
 
