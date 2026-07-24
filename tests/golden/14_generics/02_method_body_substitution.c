@@ -3,57 +3,103 @@
 #include <stdint.h>
 #include <stddef.h>
 #include "nupa/runtime.h"
-
-
-#include <string.h>
-
+struct nupa___nupa_root_vtable;
 struct nupa_NPObject_vtable;
-struct nupa_Stack_vtable;
+struct nupa_NPObject_meta_vtable;
+struct nupa_Stack_Token_ptr_vtable;
+struct nupa_Stack_Token_ptr_meta_vtable;
 struct nupa_Token_vtable;
-
-#define nupa_NPObject_vtable_index_init 2
-#define nupa_NPObject_vtable_index_dealloc 3
-#define nupa_Stack_vtable_index_push_ 4
-#define nupa_Stack_vtable_index_pop 5
-#define nupa_Stack_vtable_index_isEmpty 6
+struct nupa_Token_meta_vtable;
+struct nupa_Stack_vtable;
+struct nupa_Stack_meta_vtable;
 
 static const SEL __nupa_sel_init = {.name = "init", .hash = 0x16B1D373};
+static const SEL __nupa_sel_dealloc = {.name = "dealloc", .hash = 0xD9929EB3};
+static const SEL __nupa_sel_release = {.name = "release", .hash = 0x1036AE7E};
+static const SEL __nupa_sel_retain = {.name = "retain", .hash = 0x88BCC57C};
 static const SEL __nupa_sel_alloc = {.name = "alloc", .hash = 0xBAB1BB16};
-static const SEL __nupa_sel_push_ = {.name = "push_", .hash = 0xB74F39A6};
+static const SEL __nupa_sel_new = {.name = "new", .hash = 0x28999611};
+static const SEL __nupa_sel_push_ = {.name = "push:", .hash = 0x1C4FD8A5};
+static const SEL __nupa_sel_pop = {.name = "pop", .hash = 0x51335FD0};
 static const SEL __nupa_sel_isEmpty = {.name = "isEmpty", .hash = 0x8CCE96DE};
+static const SEL __nupa_sel_name = {.name = "name", .hash = 0x8D39BDE6};
+static const SEL __nupa_sel_setName_ = {.name = "setName_", .hash = 0x366CA295};
 
+typedef struct __nupa_root __nupa_root;
 typedef struct NPObject NPObject;
-typedef struct Stack Stack;
+typedef struct Stack_Token_ptr Stack_Token_ptr;
 typedef struct Token Token;
+typedef struct Stack Stack;
 
-
-
+NPObject * __nupa_root_init(NPObject * self, SEL _cmd);
+void __nupa_root_dealloc(NPObject * self, SEL _cmd);
+void __nupa_root_release(NPObject * self, SEL _cmd);
+NPObject * __nupa_root_retain(NPObject * self, SEL _cmd);
 NPObject * NPObject_alloc(NPClass * self, SEL _cmd);
 NPObject * NPObject_new(NPClass * self, SEL _cmd);
 NPObject * NPObject_init(NPObject * self, SEL _cmd);
 void NPObject_dealloc(NPObject * self, SEL _cmd);
-NPClass * NPObject_getClass(NPClass * self, SEL _cmd);
+void NPObject_release(NPObject * self, SEL _cmd);
+NPObject * NPObject_retain(NPObject * self, SEL _cmd);
 void Stack_push_(NPObject * self, SEL _cmd, NPObject * item);
 NPObject * Stack_pop(NPObject * self, SEL _cmd);
 _Bool Stack_isEmpty(NPObject * self, SEL _cmd);
-NPClass * Stack_getClass(NPClass * self, SEL _cmd);
 const char * Token_name(NPObject * self, SEL _cmd);
 void Token_setName_(NPObject * self, SEL _cmd, const char * value);
+NPObject * nupa_alloc(struct NPClass * cls);
+NPObject * nupa_init(NPObject * self);
+void nupa_release(NPObject * obj);
+NPObject * nupa_retain(NPObject * obj);
+int main(void);
+void Stack_Token_ptr_push_(Token * self, SEL _cmd, Token * item);
+Token * Stack_Token_ptr_pop(Token * self, SEL _cmd);
+_Bool Stack_Token_ptr_isEmpty(Token * self, SEL _cmd);
+
+NPClass * NPObject_getClass(NPClass * self, SEL _cmd);
+NPClass * Stack_Token_ptr_getClass(NPClass * self, SEL _cmd);
 NPClass * Token_getClass(NPClass * self, SEL _cmd);
-int main();
+NPClass * Stack_getClass(NPClass * self, SEL _cmd);
 
-extern NPClass nupa_NPObject_class;
-extern NPClass nupa_Stack_class;
-extern NPClass nupa_Token_class;
-void nupa_meta_init(void);
-
-// struct NPClass defined in runtime.h
-// struct NPObject defined in runtime.h
+struct nupa___nupa_root_vtable {
+    NPObject * (*init)(NPObject *, SEL);
+    void (*dealloc)(NPObject *, SEL);
+    void (*release)(NPObject *, SEL);
+    NPObject * (*retain)(NPObject *, SEL);
+};
 struct nupa_NPObject_vtable {
     NPObject * (*init)(NPObject *, SEL);
     void (*dealloc)(NPObject *, SEL);
+    void (*release)(NPObject *, SEL);
+    NPObject * (*retain)(NPObject *, SEL);
 };
 struct nupa_NPObject_meta_vtable {
+    NPObject * (*alloc)(NPClass *, SEL);
+    NPObject * (*new)(NPClass *, SEL);
+    NPClass * (*class)(NPClass *, SEL);
+};
+struct nupa_Stack_Token_ptr_vtable {
+    NPObject * (*init)(NPObject *, SEL);
+    void (*dealloc)(NPObject *, SEL);
+    void (*release)(NPObject *, SEL);
+    NPObject * (*retain)(NPObject *, SEL);
+    void (*push_)(Token *, SEL, Token *);
+    Token * (*pop)(Token *, SEL);
+    _Bool (*isEmpty)(Token *, SEL);
+};
+struct nupa_Stack_Token_ptr_meta_vtable {
+    NPObject * (*alloc)(NPClass *, SEL);
+    NPObject * (*new)(NPClass *, SEL);
+    NPClass * (*class)(NPClass *, SEL);
+};
+struct nupa_Token_vtable {
+    NPObject * (*init)(NPObject *, SEL);
+    void (*dealloc)(NPObject *, SEL);
+    void (*release)(NPObject *, SEL);
+    NPObject * (*retain)(NPObject *, SEL);
+    const char * (*name)(NPObject *, SEL);
+    void (*setName_)(NPObject *, SEL, const char *);
+};
+struct nupa_Token_meta_vtable {
     NPObject * (*alloc)(NPClass *, SEL);
     NPObject * (*new)(NPClass *, SEL);
     NPClass * (*class)(NPClass *, SEL);
@@ -61,149 +107,95 @@ struct nupa_NPObject_meta_vtable {
 struct nupa_Stack_vtable {
     NPObject * (*init)(NPObject *, SEL);
     void (*dealloc)(NPObject *, SEL);
+    void (*release)(NPObject *, SEL);
+    NPObject * (*retain)(NPObject *, SEL);
     void (*push_)(NPObject *, SEL, NPObject *);
     NPObject * (*pop)(NPObject *, SEL);
     _Bool (*isEmpty)(NPObject *, SEL);
 };
 struct nupa_Stack_meta_vtable {
+    NPObject * (*alloc)(NPClass *, SEL);
+    NPObject * (*new)(NPClass *, SEL);
     NPClass * (*class)(NPClass *, SEL);
 };
+
+struct __nupa_root {
+    struct NPClass *isa;
+    uint32_t retain_count;
+};
+typedef struct __nupa_root __nupa_root;
+
+struct Stack_Token_ptr {
+    struct NPClass *isa;
+    uint32_t retain_count;
+    Token * _items[3];
+    int _count;
+};
+typedef struct Stack_Token_ptr Stack_Token_ptr;
+
 struct Token {
     struct NPClass *isa;
     uint32_t retain_count;
     const char * _name;
 };
 typedef struct Token Token;
-struct nupa_Token_vtable {
-    NPObject * (*init)(NPObject *, SEL);
-    void (*dealloc)(NPObject *, SEL);
-    const char * (*name)(NPObject *, SEL);
-    void (*setName_)(NPObject *, SEL, const char *);
+
+struct Stack {
+    struct NPClass *isa;
+    uint32_t retain_count;
+    NPObject * _items[3];
+    int _count;
 };
-struct nupa_Token_meta_vtable {
-    NPClass * (*class)(NPClass *, SEL);
+typedef struct Stack Stack;
+
+extern NPClass nupa___nupa_root_class;
+extern NPClass nupa_NPObject_class;
+extern NPClass nupa_Stack_Token_ptr_class;
+extern NPClass nupa_Token_class;
+extern NPClass nupa_Stack_class;
+void nupa_meta_init(void);
+
+struct nupa___nupa_root_vtable nupa___nupa_root_vtable_inst = {
+    .init = __nupa_root_init,
+    .dealloc = __nupa_root_dealloc,
+    .release = __nupa_root_release,
+    .retain = __nupa_root_retain,
 };
-NPObject * NPObject_alloc(NPClass * self, SEL _cmd) {
-    return nupa_alloc(self);
-}
-
-NPObject * NPObject_new(NPClass * self, SEL _cmd) {
-    NPObject * obj = nupa_alloc(self);
-    return nupa_init(obj);
-}
-
-NPObject * NPObject_init(NPObject * self, SEL _cmd) {
-    struct NPObject * _self = ((struct NPObject *)(self));
-    {
-        return nupa_init(self);
-    }
-}
-
-void NPObject_dealloc(NPObject * self, SEL _cmd) {
-    struct NPObject * _self = ((struct NPObject *)(self));
-    {
-        return;
-    }
-}
-
-NPClass * NPObject_getClass(NPClass * self, SEL _cmd) {
-    return &nupa_NPObject_class;
-}
-
-NPObject * nupa_alloc(struct NPClass * cls);
-NPObject * nupa_init(NPObject * );
-void Stack_push_(NPObject * self, SEL _cmd, NPObject * item) {
-    struct Stack * _self = ((struct Stack *)(self));
-    {
-        if (((struct Stack *)(self))->_count < 3) {
-            {
-                ((struct Stack *)(self))->_items[((struct Stack *)(self))->_count++] = item;
-            }
-        }
-    }
-}
-
-NPObject * Stack_pop(NPObject * self, SEL _cmd) {
-    struct Stack * _self = ((struct Stack *)(self));
-    {
-        if (((struct Stack *)(self))->_count > 0) {
-            {
-                ((struct Stack *)(self))->_count--;
-                T;
-                ((struct Stack *)(self))->_items[((struct Stack *)(self))->_count] = 0;
-                return item;
-            }
-        }
-        return 0;
-    }
-}
-
-_Bool Stack_isEmpty(NPObject * self, SEL _cmd) {
-    struct Stack * _self = ((struct Stack *)(self));
-    {
-        return ((struct Stack *)(self))->_count == 0;
-    }
-}
-
-NPClass * Stack_getClass(NPClass * self, SEL _cmd) {
-    return &nupa_Stack_class;
-}
-
-const char * Token_name(NPObject * self, SEL _cmd) {
-    return ((struct Token *)(self))->_name;
-}
-
-void Token_setName_(NPObject * self, SEL _cmd, const char * value) {
-    ((struct Token *)(self))->_name = value;
-}
-
-NPClass * Token_getClass(NPClass * self, SEL _cmd) {
-    return &nupa_Token_class;
-}
-
-int main() {
-    nupa_autoreleasepool_t *__pool = nupa_autoreleasepool_push();
-    nupa_meta_init();
-    {
-        nupa_autoreleasepool_t * __pool = nupa_autoreleasepool_push();
-        {
-            NPObject *__nupa_tmp_0 = (NPObject_alloc(&nupa_Stack_class, __nupa_sel_alloc));
-            Stack * stack = ((struct nupa_NPObject_vtable *)__nupa_tmp_0->isa->vtable)->init(__nupa_tmp_0, __nupa_sel_init);
-            NPObject *__nupa_tmp_1 = (NPObject_alloc(&nupa_Token_class, __nupa_sel_alloc));
-            Token * t1 = ((struct nupa_NPObject_vtable *)__nupa_tmp_1->isa->vtable)->init(__nupa_tmp_1, __nupa_sel_init);
-            NPObject *__nupa_tmp_2 = (NPObject_alloc(&nupa_Token_class, __nupa_sel_alloc));
-            Token * t2 = ((struct nupa_NPObject_vtable *)__nupa_tmp_2->isa->vtable)->init(__nupa_tmp_2, __nupa_sel_init);
-            ((struct nupa_Stack_vtable *)stack->isa->vtable)->push_(stack, __nupa_sel_push_, t1);
-            ((struct nupa_Stack_vtable *)stack->isa->vtable)->push_(stack, __nupa_sel_push_, t2);
-            printf("Stack<Token*> works: isEmpty=%d\n", ((struct nupa_Stack_vtable *)stack->isa->vtable)->isEmpty(stack, __nupa_sel_isEmpty));
-        }
-        nupa_autoreleasepool_pop(__pool);
-    }
-    return 0;
-    nupa_autoreleasepool_pop(__pool);
-}
-
-
-// ─── Class metadata ─────────────────────────────────────
 
 struct nupa_NPObject_vtable nupa_NPObject_vtable_inst = {
     .init = NPObject_init,
     .dealloc = NPObject_dealloc,
+    .release = NPObject_release,
+    .retain = NPObject_retain,
 };
 
-struct nupa_Stack_vtable nupa_Stack_vtable_inst = {
+struct nupa_Stack_Token_ptr_vtable nupa_Stack_Token_ptr_vtable_inst = {
     .init = NPObject_init,
     .dealloc = NPObject_dealloc,
-    .push_ = Stack_push_,
-    .pop = Stack_pop,
-    .isEmpty = Stack_isEmpty,
+    .release = NPObject_release,
+    .retain = NPObject_retain,
+    .push_ = Stack_Token_ptr_push_,
+    .pop = Stack_Token_ptr_pop,
+    .isEmpty = Stack_Token_ptr_isEmpty,
 };
 
 struct nupa_Token_vtable nupa_Token_vtable_inst = {
     .init = NPObject_init,
     .dealloc = NPObject_dealloc,
+    .release = NPObject_release,
+    .retain = NPObject_retain,
     .name = Token_name,
     .setName_ = Token_setName_,
+};
+
+struct nupa_Stack_vtable nupa_Stack_vtable_inst = {
+    .init = NPObject_init,
+    .dealloc = NPObject_dealloc,
+    .release = NPObject_release,
+    .retain = NPObject_retain,
+    .push_ = Stack_push_,
+    .pop = Stack_pop,
+    .isEmpty = Stack_isEmpty,
 };
 
 struct nupa_NPObject_meta_vtable nupa_NPObject_meta_vtable_inst = {
@@ -212,33 +204,73 @@ struct nupa_NPObject_meta_vtable nupa_NPObject_meta_vtable_inst = {
     .class = NPObject_getClass,
 };
 
-struct nupa_Stack_meta_vtable nupa_Stack_meta_vtable_inst = {
-    .class = Stack_getClass,
+struct nupa_Stack_Token_ptr_meta_vtable nupa_Stack_Token_ptr_meta_vtable_inst = {
+    .alloc = NPObject_alloc,
+    .new = NPObject_new,
+    .class = Stack_Token_ptr_getClass,
 };
 
 struct nupa_Token_meta_vtable nupa_Token_meta_vtable_inst = {
+    .alloc = NPObject_alloc,
+    .new = NPObject_new,
     .class = Token_getClass,
 };
 
+struct nupa_Stack_meta_vtable nupa_Stack_meta_vtable_inst = {
+    .alloc = NPObject_alloc,
+    .new = NPObject_new,
+    .class = Stack_getClass,
+};
+
+NPClass * NPObject_getClass(NPClass * self, SEL _cmd) {
+    (void)_cmd;
+    return self;
+}
+
+NPClass * Stack_Token_ptr_getClass(NPClass * self, SEL _cmd) {
+    (void)_cmd;
+    return self;
+}
+
+NPClass * Token_getClass(NPClass * self, SEL _cmd) {
+    (void)_cmd;
+    return self;
+}
+
+NPClass * Stack_getClass(NPClass * self, SEL _cmd) {
+    (void)_cmd;
+    return self;
+}
+
+NPClass nupa___nupa_root_class;
 NPClass nupa_NPObject_class;
-NPClass nupa_Stack_class;
+NPClass nupa_Stack_Token_ptr_class;
 NPClass nupa_Token_class;
+NPClass nupa_Stack_class;
 
 void nupa_meta_init(void) {
+    nupa___nupa_root_class = (NPClass){
+        .name = "__nupa_root",
+        .superclass = NULL,
+        .instance_size = sizeof(struct __nupa_root),
+        .vtable = &nupa___nupa_root_vtable_inst,
+        .class_vtable = NULL,
+        .protocol_count = 0,
+    };
     nupa_NPObject_class = (NPClass){
         .name = "NPObject",
-        .superclass = NULL,
+        .superclass = &nupa___nupa_root_class,
         .instance_size = sizeof(struct NPObject),
         .vtable = &nupa_NPObject_vtable_inst,
         .class_vtable = &nupa_NPObject_meta_vtable_inst,
         .protocol_count = 0,
     };
-    nupa_Stack_class = (NPClass){
-        .name = "Stack",
+    nupa_Stack_Token_ptr_class = (NPClass){
+        .name = "Stack<Token *>",
         .superclass = &nupa_NPObject_class,
-        .instance_size = sizeof(struct Stack),
-        .vtable = &nupa_Stack_vtable_inst,
-        .class_vtable = &nupa_Stack_meta_vtable_inst,
+        .instance_size = sizeof(struct Stack_Token_ptr),
+        .vtable = &nupa_Stack_Token_ptr_vtable_inst,
+        .class_vtable = &nupa_Stack_Token_ptr_meta_vtable_inst,
         .protocol_count = 0,
     };
     nupa_Token_class = (NPClass){
@@ -249,4 +281,167 @@ void nupa_meta_init(void) {
         .class_vtable = &nupa_Token_meta_vtable_inst,
         .protocol_count = 0,
     };
+    nupa_Stack_class = (NPClass){
+        .name = "Stack",
+        .superclass = &nupa_NPObject_class,
+        .instance_size = sizeof(struct Stack),
+        .vtable = &nupa_Stack_vtable_inst,
+        .class_vtable = &nupa_Stack_meta_vtable_inst,
+        .protocol_count = 0,
+    };
 }
+NPObject * __nupa_root_init(NPObject * self, SEL _cmd) {
+  struct __nupa_root * _self = (struct __nupa_root *)self;
+  {
+    return nupa_init(self);
+  }
+}
+
+void __nupa_root_dealloc(NPObject * self, SEL _cmd) {
+  struct __nupa_root * _self = (struct __nupa_root *)self;
+  {
+    return;
+  }
+}
+
+void __nupa_root_release(NPObject * self, SEL _cmd) {
+  struct __nupa_root * _self = (struct __nupa_root *)self;
+  {
+    nupa_release(self);
+  }
+}
+
+NPObject * __nupa_root_retain(NPObject * self, SEL _cmd) {
+  struct __nupa_root * _self = (struct __nupa_root *)self;
+  {
+    return nupa_retain(self);
+  }
+}
+
+NPObject * NPObject_alloc(NPClass * self, SEL _cmd) {
+  return nupa_alloc(self);
+}
+
+NPObject * NPObject_new(NPClass * self, SEL _cmd) {
+  NPObject * obj = nupa_alloc(self);
+  return nupa_init(obj);
+}
+
+NPObject * NPObject_init(NPObject * self, SEL _cmd) {
+  struct NPObject * _self = (struct NPObject *)self;
+  {
+    return nupa_init(self);
+  }
+}
+
+void NPObject_dealloc(NPObject * self, SEL _cmd) {
+  struct NPObject * _self = (struct NPObject *)self;
+  {
+    return;
+  }
+}
+
+void NPObject_release(NPObject * self, SEL _cmd) {
+  struct NPObject * _self = (struct NPObject *)self;
+  {
+    nupa_release(self);
+  }
+}
+
+NPObject * NPObject_retain(NPObject * self, SEL _cmd) {
+  struct NPObject * _self = (struct NPObject *)self;
+  {
+    return nupa_retain(self);
+  }
+}
+
+void Stack_push_(NPObject * self, SEL _cmd, NPObject * item) {
+  struct Stack * _self = (struct Stack *)self;
+  {
+    if ((_self->_count < 3))     {
+      _self->_items[_self->_count++] = item;
+    }
+  }
+}
+
+NPObject * Stack_pop(NPObject * self, SEL _cmd) {
+  struct Stack * _self = (struct Stack *)self;
+  {
+    if ((_self->_count > 0))     {
+      _self->_count--;
+      NPObject * item = _self->_items[_self->_count];
+      _self->_items[_self->_count] = 0;
+      return item;
+    }
+    return 0;
+  }
+}
+
+_Bool Stack_isEmpty(NPObject * self, SEL _cmd) {
+  struct Stack * _self = (struct Stack *)self;
+  {
+    return (_self->_count == 0);
+  }
+}
+
+const char * Token_name(NPObject * self, SEL _cmd) {
+  return ((struct Token *)self)->_name;
+}
+
+void Token_setName_(NPObject * self, SEL _cmd, const char * value) {
+  ((struct Token *)self)->_name = value;
+}
+
+NPObject * nupa_alloc(struct NPClass * cls);
+
+NPObject * nupa_init(NPObject * self);
+
+void nupa_release(NPObject * obj);
+
+NPObject * nupa_retain(NPObject * obj);
+
+int main(void) {
+  nupa_meta_init();
+  {
+    NPObject *__nupa_tmp_0 = (NPObject_alloc(&nupa_Stack_class, sel_registerName("alloc")));
+    Stack_Token_ptr * stack = ((struct nupa_NPObject_vtable *)__nupa_tmp_0->isa->vtable)->init(__nupa_tmp_0, sel_registerName("init"));
+    NPObject *__nupa_tmp_1 = (NPObject_alloc(&nupa_Token_class, sel_registerName("alloc")));
+    Token * t1 = ((struct nupa_NPObject_vtable *)__nupa_tmp_1->isa->vtable)->init(__nupa_tmp_1, sel_registerName("init"));
+    NPObject *__nupa_tmp_2 = (NPObject_alloc(&nupa_Token_class, sel_registerName("alloc")));
+    Token * t2 = ((struct nupa_NPObject_vtable *)__nupa_tmp_2->isa->vtable)->init(__nupa_tmp_2, sel_registerName("init"));
+    ((struct nupa_Stack_vtable *)((NPObject *)(stack))->isa->vtable)->push_(stack, sel_registerName("push:"), t1);
+    ((struct nupa_Stack_vtable *)((NPObject *)(stack))->isa->vtable)->push_(stack, sel_registerName("push:"), t2);
+    printf("Stack<Token*> works: isEmpty=%d\n", ((struct nupa_Stack_vtable *)((NPObject *)(stack))->isa->vtable)->isEmpty(stack, sel_registerName("isEmpty")));
+  }
+  return 0;
+}
+
+void Stack_Token_ptr_push_(Token * self, SEL _cmd, Token * item) {
+  struct Stack_Token_ptr * _self = (struct Stack_Token_ptr *)self;
+  {
+    if ((_self->_count < 3))     {
+      _self->_items[_self->_count++] = item;
+    }
+  }
+}
+
+Token * Stack_Token_ptr_pop(Token * self, SEL _cmd) {
+  struct Stack_Token_ptr * _self = (struct Stack_Token_ptr *)self;
+  {
+    if ((_self->_count > 0))     {
+      _self->_count--;
+      Token * item = _self->_items[_self->_count];
+      _self->_items[_self->_count] = 0;
+      return item;
+    }
+    return 0;
+  }
+}
+
+_Bool Stack_Token_ptr_isEmpty(Token * self, SEL _cmd) {
+  struct Stack_Token_ptr * _self = (struct Stack_Token_ptr *)self;
+  {
+    return (_self->_count == 0);
+  }
+}
+

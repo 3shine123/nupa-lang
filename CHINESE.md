@@ -77,8 +77,8 @@ nupac run hello.np                          # 运行后自动清理临时文件
 # 显示编译警告
 nupac -v run hello.np
 
-# [!] 错误：不用 --rewrite-nupa 却输出 .c
-nupac hello.np -o hello.c   → Error: use --rewrite-nupa to output C code
+# [!] 错误：不用 -rewrite-nupa 却输出 .c
+nupac hello.np -o hello.c   → Error: use -rewrite-nupa to output C code
 
 # [!] 错误：没有指定任何输出方式
 nupac hello.np              → Error: specify -o or --rewrite-nupa

@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include <stddef.h>
 #include <stdarg.h>
+#include <setjmp.h>
 
 // ─── Public types (used by generated code) ─────────────────────────────────────
 
@@ -20,15 +21,27 @@ typedef struct {
 } SEL;
 
 typedef struct NPClass NPClass;
+typedef struct __nupa_root __nupa_root;
 typedef struct NPObject NPObject;
 typedef struct NPProtocol NPProtocol;
 typedef NPObject *id;
 typedef NPObject *nupa_id_t;
 
-struct NPObject {
-    NPClass *isa;
+#ifndef __NUPA_ROOT_DEFINED
+#define __NUPA_ROOT_DEFINED
+struct __nupa_root {
+    struct NPClass *isa;
     uint32_t retain_count;
 };
+#endif
+
+#ifndef NPOBJECT_DEFINED
+#define NPOBJECT_DEFINED
+struct NPObject {
+    struct NPClass *isa;
+    uint32_t retain_count;
+};
+#endif
 
 struct NPClass {
     const char *name;
@@ -84,6 +97,10 @@ struct np_object {
 // ─── Runtime API ────────────────────────────────────────────────────────────────
 
 SEL sel_registerName(const char *name);
+
+// Exception globals (TLS for thread safety)
+extern __thread jmp_buf __nupa_exception_buf;
+extern __thread id __nupa_exception_value;
 
 NPObject *nupa_retain(NPObject *obj);
 void nupa_release(NPObject *obj);

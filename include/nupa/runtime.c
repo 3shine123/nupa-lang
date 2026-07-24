@@ -3,6 +3,11 @@
 #include <string.h>
 #include <stdio.h>
 
+// ─── Exception globals ────────────────────────────────────────────────────────
+
+__thread jmp_buf __nupa_exception_buf;
+__thread id __nupa_exception_value;
+
 // ─── Weak reference side table ───────────────────────────────────────────────
 
 #define MAX_WEAK_ENTRIES 1024
@@ -79,7 +84,12 @@ void nupa_weak_auto_cleanup(void *ptr) {
 // ─── Selectors ───────────────────────────────────────────────────────────────
 
 SEL sel_registerName(const char *name) {
-    SEL sel = { name, 0 };
+    unsigned hash = 0x811C9DC5;
+    for (const char *p = name; *p; p++) {
+        hash ^= (unsigned char)*p;
+        hash *= 0x01000193;
+    }
+    SEL sel = { name, hash };
     return sel;
 }
 
@@ -117,6 +127,24 @@ void nupa_release(NPObject *obj) {
 
 NPObject *nupa_autorelease(NPObject *obj) {
     return obj;
+}
+
+// ─── Autorelease pool ─────────────────────────────────────────────────────────
+
+struct nupa_autoreleasepool {
+    struct nupa_autoreleasepool *next;
+};
+
+nupa_autoreleasepool_t *nupa_autoreleasepool_push(void) {
+    nupa_autoreleasepool_t *pool = malloc(sizeof(nupa_autoreleasepool_t));
+    if (pool) {
+        pool->next = NULL;
+    }
+    return pool;
+}
+
+void nupa_autoreleasepool_pop(nupa_autoreleasepool_t *pool) {
+    free(pool);
 }
 
 // ─── Logging ─────────────────────────────────────────────────────────────────

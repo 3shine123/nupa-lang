@@ -1,8 +1,3 @@
-# Meson / Ninja
-builddir/
-meson-logs/
-meson-private/
-
 # Build outputs
 *.o
 *.obj

@@ -364,6 +364,13 @@ impl Binder {
                         for prop in properties.iter_mut() {
                             if let Some(ref n) = prop.name { prop_names.push(n.clone()); }
                             self.bind_decl(prop);
+                            // Follow the next chain (comma-separated properties)
+                            let mut cur = prop.next.as_mut().map(|n| n.as_mut());
+                            while let Some(next_prop) = cur {
+                                if let Some(ref n) = next_prop.name { prop_names.push(n.clone()); }
+                                self.bind_decl(next_prop);
+                                cur = next_prop.next.as_mut().map(|n| n.as_mut());
+                            }
                         }
                     }
                 }

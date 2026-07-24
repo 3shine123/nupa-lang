@@ -3,6 +3,13 @@
 
 struct NPClass;
 
+@interface __nupa_root
+- (id)init;
+- (void)dealloc;
+- (void)release;
+- (id)retain;
+@end
+
 @interface NPObject
 + (id)alloc;
 + (id)new;
@@ -16,6 +23,21 @@ id nupa_alloc(struct NPClass *cls);
 id nupa_init(id self);
 void nupa_release(id obj);
 id nupa_retain(id obj);
+
+@implementation __nupa_root
+- (id)init {
+    return nupa_init(self);
+}
+- (void)dealloc {
+    return;
+}
+- (void)release {
+    nupa_release(self);
+}
+- (id)retain {
+    return nupa_retain(self);
+}
+@end
 
 @implementation NPObject
 + (id)alloc {

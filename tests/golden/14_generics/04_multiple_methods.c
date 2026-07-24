@@ -3,52 +3,80 @@
 #include <stdint.h>
 #include <stddef.h>
 #include "nupa/runtime.h"
-
-
-#include <string.h>
-
+struct nupa___nupa_root_vtable;
 struct nupa_NPObject_vtable;
+struct nupa_NPObject_meta_vtable;
+struct nupa_Item_vtable;
+struct nupa_Item_meta_vtable;
 struct nupa_Holder_vtable;
-
-#define nupa_NPObject_vtable_index_init 2
-#define nupa_NPObject_vtable_index_dealloc 3
-#define nupa_Holder_vtable_index_put_ 4
-#define nupa_Holder_vtable_index_get 5
+struct nupa_Holder_meta_vtable;
+struct nupa_Holder_Item_ptr_vtable;
+struct nupa_Holder_Item_ptr_meta_vtable;
 
 static const SEL __nupa_sel_init = {.name = "init", .hash = 0x16B1D373};
+static const SEL __nupa_sel_dealloc = {.name = "dealloc", .hash = 0xD9929EB3};
+static const SEL __nupa_sel_release = {.name = "release", .hash = 0x1036AE7E};
+static const SEL __nupa_sel_retain = {.name = "retain", .hash = 0x88BCC57C};
 static const SEL __nupa_sel_alloc = {.name = "alloc", .hash = 0xBAB1BB16};
-static const SEL __nupa_sel_put_ = {.name = "put_", .hash = 0xB067F1A3};
+static const SEL __nupa_sel_new = {.name = "new", .hash = 0x28999611};
+static const SEL __nupa_sel_put_ = {.name = "put:", .hash = 0xD36828BC};
 static const SEL __nupa_sel_get = {.name = "get", .hash = 0x540CA757};
 
+typedef struct __nupa_root __nupa_root;
 typedef struct NPObject NPObject;
-typedef struct Holder Holder;
 typedef struct Item Item;
+typedef struct Holder Holder;
+typedef struct Holder_Item_ptr Holder_Item_ptr;
 
-
-
+NPObject * __nupa_root_init(NPObject * self, SEL _cmd);
+void __nupa_root_dealloc(NPObject * self, SEL _cmd);
+void __nupa_root_release(NPObject * self, SEL _cmd);
+NPObject * __nupa_root_retain(NPObject * self, SEL _cmd);
 NPObject * NPObject_alloc(NPClass * self, SEL _cmd);
 NPObject * NPObject_new(NPClass * self, SEL _cmd);
 NPObject * NPObject_init(NPObject * self, SEL _cmd);
 void NPObject_dealloc(NPObject * self, SEL _cmd);
-NPClass * NPObject_getClass(NPClass * self, SEL _cmd);
+void NPObject_release(NPObject * self, SEL _cmd);
+NPObject * NPObject_retain(NPObject * self, SEL _cmd);
 void Holder_put_(NPObject * self, SEL _cmd, NPObject * item);
 NPObject * Holder_get(NPObject * self, SEL _cmd);
-NPClass * Holder_getClass(NPClass * self, SEL _cmd);
+NPObject * nupa_alloc(struct NPClass * cls);
+NPObject * nupa_init(NPObject * self);
+void nupa_release(NPObject * obj);
+NPObject * nupa_retain(NPObject * obj);
+int main(void);
+void Holder_Item_ptr_put_(Item * self, SEL _cmd, Item * item);
+Item * Holder_Item_ptr_get(Item * self, SEL _cmd);
+
+NPClass * NPObject_getClass(NPClass * self, SEL _cmd);
 NPClass * Item_getClass(NPClass * self, SEL _cmd);
-int main();
+NPClass * Holder_getClass(NPClass * self, SEL _cmd);
+NPClass * Holder_Item_ptr_getClass(NPClass * self, SEL _cmd);
 
-extern NPClass nupa_NPObject_class;
-extern NPClass nupa_Holder_class;
-extern NPClass nupa_Item_class;
-void nupa_meta_init(void);
-
-// struct NPClass defined in runtime.h
-// struct NPObject defined in runtime.h
+struct nupa___nupa_root_vtable {
+    NPObject * (*init)(NPObject *, SEL);
+    void (*dealloc)(NPObject *, SEL);
+    void (*release)(NPObject *, SEL);
+    NPObject * (*retain)(NPObject *, SEL);
+};
 struct nupa_NPObject_vtable {
     NPObject * (*init)(NPObject *, SEL);
     void (*dealloc)(NPObject *, SEL);
+    void (*release)(NPObject *, SEL);
+    NPObject * (*retain)(NPObject *, SEL);
 };
 struct nupa_NPObject_meta_vtable {
+    NPObject * (*alloc)(NPClass *, SEL);
+    NPObject * (*new)(NPClass *, SEL);
+    NPClass * (*class)(NPClass *, SEL);
+};
+struct nupa_Item_vtable {
+    NPObject * (*init)(NPObject *, SEL);
+    void (*dealloc)(NPObject *, SEL);
+    void (*release)(NPObject *, SEL);
+    NPObject * (*retain)(NPObject *, SEL);
+};
+struct nupa_Item_meta_vtable {
     NPObject * (*alloc)(NPClass *, SEL);
     NPObject * (*new)(NPClass *, SEL);
     NPClass * (*class)(NPClass *, SEL);
@@ -56,118 +84,102 @@ struct nupa_NPObject_meta_vtable {
 struct nupa_Holder_vtable {
     NPObject * (*init)(NPObject *, SEL);
     void (*dealloc)(NPObject *, SEL);
+    void (*release)(NPObject *, SEL);
+    NPObject * (*retain)(NPObject *, SEL);
     void (*put_)(NPObject *, SEL, NPObject *);
     NPObject * (*get)(NPObject *, SEL);
 };
 struct nupa_Holder_meta_vtable {
+    NPObject * (*alloc)(NPClass *, SEL);
+    NPObject * (*new)(NPClass *, SEL);
     NPClass * (*class)(NPClass *, SEL);
 };
+struct nupa_Holder_Item_ptr_vtable {
+    NPObject * (*init)(NPObject *, SEL);
+    void (*dealloc)(NPObject *, SEL);
+    void (*release)(NPObject *, SEL);
+    NPObject * (*retain)(NPObject *, SEL);
+    void (*put_)(Item *, SEL, Item *);
+    Item * (*get)(Item *, SEL);
+};
+struct nupa_Holder_Item_ptr_meta_vtable {
+    NPObject * (*alloc)(NPClass *, SEL);
+    NPObject * (*new)(NPClass *, SEL);
+    NPClass * (*class)(NPClass *, SEL);
+};
+
+struct __nupa_root {
+    struct NPClass *isa;
+    uint32_t retain_count;
+};
+typedef struct __nupa_root __nupa_root;
+
 struct Item {
     struct NPClass *isa;
     uint32_t retain_count;
 };
 typedef struct Item Item;
-struct nupa_Item_vtable {
-    NPObject * (*init)(NPObject *, SEL);
-    void (*dealloc)(NPObject *, SEL);
+
+struct Holder {
+    struct NPClass *isa;
+    uint32_t retain_count;
+    NPObject * _data[4];
+    int _count;
 };
-struct nupa_Item_meta_vtable {
-    NPClass * (*class)(NPClass *, SEL);
+typedef struct Holder Holder;
+
+struct Holder_Item_ptr {
+    struct NPClass *isa;
+    uint32_t retain_count;
+    Item * _data[4];
+    int _count;
 };
-NPObject * NPObject_alloc(NPClass * self, SEL _cmd) {
-    return nupa_alloc(self);
-}
+typedef struct Holder_Item_ptr Holder_Item_ptr;
 
-NPObject * NPObject_new(NPClass * self, SEL _cmd) {
-    NPObject * obj = nupa_alloc(self);
-    return nupa_init(obj);
-}
+extern NPClass nupa___nupa_root_class;
+extern NPClass nupa_NPObject_class;
+extern NPClass nupa_Item_class;
+extern NPClass nupa_Holder_class;
+extern NPClass nupa_Holder_Item_ptr_class;
+void nupa_meta_init(void);
 
-NPObject * NPObject_init(NPObject * self, SEL _cmd) {
-    struct NPObject * _self = ((struct NPObject *)(self));
-    {
-        return nupa_init(self);
-    }
-}
-
-void NPObject_dealloc(NPObject * self, SEL _cmd) {
-    struct NPObject * _self = ((struct NPObject *)(self));
-    {
-        return;
-    }
-}
-
-NPClass * NPObject_getClass(NPClass * self, SEL _cmd) {
-    return &nupa_NPObject_class;
-}
-
-NPObject * nupa_alloc(struct NPClass * cls);
-NPObject * nupa_init(NPObject * );
-void Holder_put_(NPObject * self, SEL _cmd, NPObject * item) {
-    struct Holder * _self = ((struct Holder *)(self));
-    {
-        if (((struct Holder *)(self))->_count < 4) {
-            ((struct Holder *)(self))->_data[((struct Holder *)(self))->_count++] = item;
-        }
-    }
-}
-
-NPObject * Holder_get(NPObject * self, SEL _cmd) {
-    struct Holder * _self = ((struct Holder *)(self));
-    {
-        if (((struct Holder *)(self))->_count > 0) {
-            return ((struct Holder *)(self))->_data[--((struct Holder *)(self))->_count];
-        }
-        return 0;
-    }
-}
-
-NPClass * Holder_getClass(NPClass * self, SEL _cmd) {
-    return &nupa_Holder_class;
-}
-
-NPClass * Item_getClass(NPClass * self, SEL _cmd) {
-    return &nupa_Item_class;
-}
-
-int main() {
-    nupa_autoreleasepool_t *__pool = nupa_autoreleasepool_push();
-    nupa_meta_init();
-    {
-        nupa_autoreleasepool_t * __pool = nupa_autoreleasepool_push();
-        {
-            NPObject *__nupa_tmp_0 = (NPObject_alloc(&nupa_Holder_class, __nupa_sel_alloc));
-            Holder * holder = ((struct nupa_NPObject_vtable *)__nupa_tmp_0->isa->vtable)->init(__nupa_tmp_0, __nupa_sel_init);
-            NPObject *__nupa_tmp_1 = (NPObject_alloc(&nupa_Item_class, __nupa_sel_alloc));
-            Item * r = ((struct nupa_NPObject_vtable *)__nupa_tmp_1->isa->vtable)->init(__nupa_tmp_1, __nupa_sel_init);
-            ((struct nupa_Holder_vtable *)holder->isa->vtable)->put_(holder, __nupa_sel_put_, r);
-            Item * r2 = ((struct nupa_Holder_vtable *)holder->isa->vtable)->get(holder, __nupa_sel_get);
-            printf("Holder<Item*> works: %p\n", ((void *)(r2)));
-        }
-        nupa_autoreleasepool_pop(__pool);
-    }
-    return 0;
-    nupa_autoreleasepool_pop(__pool);
-}
-
-
-// ─── Class metadata ─────────────────────────────────────
+struct nupa___nupa_root_vtable nupa___nupa_root_vtable_inst = {
+    .init = __nupa_root_init,
+    .dealloc = __nupa_root_dealloc,
+    .release = __nupa_root_release,
+    .retain = __nupa_root_retain,
+};
 
 struct nupa_NPObject_vtable nupa_NPObject_vtable_inst = {
     .init = NPObject_init,
     .dealloc = NPObject_dealloc,
-};
-
-struct nupa_Holder_vtable nupa_Holder_vtable_inst = {
-    .init = NPObject_init,
-    .dealloc = NPObject_dealloc,
-    .put_ = Holder_put_,
-    .get = Holder_get,
+    .release = NPObject_release,
+    .retain = NPObject_retain,
 };
 
 struct nupa_Item_vtable nupa_Item_vtable_inst = {
     .init = NPObject_init,
     .dealloc = NPObject_dealloc,
+    .release = NPObject_release,
+    .retain = NPObject_retain,
+};
+
+struct nupa_Holder_vtable nupa_Holder_vtable_inst = {
+    .init = NPObject_init,
+    .dealloc = NPObject_dealloc,
+    .release = NPObject_release,
+    .retain = NPObject_retain,
+    .put_ = Holder_put_,
+    .get = Holder_get,
+};
+
+struct nupa_Holder_Item_ptr_vtable nupa_Holder_Item_ptr_vtable_inst = {
+    .init = NPObject_init,
+    .dealloc = NPObject_dealloc,
+    .release = NPObject_release,
+    .retain = NPObject_retain,
+    .put_ = Holder_Item_ptr_put_,
+    .get = Holder_Item_ptr_get,
 };
 
 struct nupa_NPObject_meta_vtable nupa_NPObject_meta_vtable_inst = {
@@ -176,33 +188,65 @@ struct nupa_NPObject_meta_vtable nupa_NPObject_meta_vtable_inst = {
     .class = NPObject_getClass,
 };
 
-struct nupa_Holder_meta_vtable nupa_Holder_meta_vtable_inst = {
-    .class = Holder_getClass,
-};
-
 struct nupa_Item_meta_vtable nupa_Item_meta_vtable_inst = {
+    .alloc = NPObject_alloc,
+    .new = NPObject_new,
     .class = Item_getClass,
 };
 
+struct nupa_Holder_meta_vtable nupa_Holder_meta_vtable_inst = {
+    .alloc = NPObject_alloc,
+    .new = NPObject_new,
+    .class = Holder_getClass,
+};
+
+struct nupa_Holder_Item_ptr_meta_vtable nupa_Holder_Item_ptr_meta_vtable_inst = {
+    .alloc = NPObject_alloc,
+    .new = NPObject_new,
+    .class = Holder_Item_ptr_getClass,
+};
+
+NPClass * NPObject_getClass(NPClass * self, SEL _cmd) {
+    (void)_cmd;
+    return self;
+}
+
+NPClass * Item_getClass(NPClass * self, SEL _cmd) {
+    (void)_cmd;
+    return self;
+}
+
+NPClass * Holder_getClass(NPClass * self, SEL _cmd) {
+    (void)_cmd;
+    return self;
+}
+
+NPClass * Holder_Item_ptr_getClass(NPClass * self, SEL _cmd) {
+    (void)_cmd;
+    return self;
+}
+
+NPClass nupa___nupa_root_class;
 NPClass nupa_NPObject_class;
-NPClass nupa_Holder_class;
 NPClass nupa_Item_class;
+NPClass nupa_Holder_class;
+NPClass nupa_Holder_Item_ptr_class;
 
 void nupa_meta_init(void) {
+    nupa___nupa_root_class = (NPClass){
+        .name = "__nupa_root",
+        .superclass = NULL,
+        .instance_size = sizeof(struct __nupa_root),
+        .vtable = &nupa___nupa_root_vtable_inst,
+        .class_vtable = NULL,
+        .protocol_count = 0,
+    };
     nupa_NPObject_class = (NPClass){
         .name = "NPObject",
-        .superclass = NULL,
+        .superclass = &nupa___nupa_root_class,
         .instance_size = sizeof(struct NPObject),
         .vtable = &nupa_NPObject_vtable_inst,
         .class_vtable = &nupa_NPObject_meta_vtable_inst,
-        .protocol_count = 0,
-    };
-    nupa_Holder_class = (NPClass){
-        .name = "Holder",
-        .superclass = &nupa_NPObject_class,
-        .instance_size = sizeof(struct Holder),
-        .vtable = &nupa_Holder_vtable_inst,
-        .class_vtable = &nupa_Holder_meta_vtable_inst,
         .protocol_count = 0,
     };
     nupa_Item_class = (NPClass){
@@ -213,4 +257,137 @@ void nupa_meta_init(void) {
         .class_vtable = &nupa_Item_meta_vtable_inst,
         .protocol_count = 0,
     };
+    nupa_Holder_class = (NPClass){
+        .name = "Holder",
+        .superclass = &nupa_NPObject_class,
+        .instance_size = sizeof(struct Holder),
+        .vtable = &nupa_Holder_vtable_inst,
+        .class_vtable = &nupa_Holder_meta_vtable_inst,
+        .protocol_count = 0,
+    };
+    nupa_Holder_Item_ptr_class = (NPClass){
+        .name = "Holder<Item *>",
+        .superclass = &nupa_NPObject_class,
+        .instance_size = sizeof(struct Holder_Item_ptr),
+        .vtable = &nupa_Holder_Item_ptr_vtable_inst,
+        .class_vtable = &nupa_Holder_Item_ptr_meta_vtable_inst,
+        .protocol_count = 0,
+    };
 }
+NPObject * __nupa_root_init(NPObject * self, SEL _cmd) {
+  struct __nupa_root * _self = (struct __nupa_root *)self;
+  {
+    return nupa_init(self);
+  }
+}
+
+void __nupa_root_dealloc(NPObject * self, SEL _cmd) {
+  struct __nupa_root * _self = (struct __nupa_root *)self;
+  {
+    return;
+  }
+}
+
+void __nupa_root_release(NPObject * self, SEL _cmd) {
+  struct __nupa_root * _self = (struct __nupa_root *)self;
+  {
+    nupa_release(self);
+  }
+}
+
+NPObject * __nupa_root_retain(NPObject * self, SEL _cmd) {
+  struct __nupa_root * _self = (struct __nupa_root *)self;
+  {
+    return nupa_retain(self);
+  }
+}
+
+NPObject * NPObject_alloc(NPClass * self, SEL _cmd) {
+  return nupa_alloc(self);
+}
+
+NPObject * NPObject_new(NPClass * self, SEL _cmd) {
+  NPObject * obj = nupa_alloc(self);
+  return nupa_init(obj);
+}
+
+NPObject * NPObject_init(NPObject * self, SEL _cmd) {
+  struct NPObject * _self = (struct NPObject *)self;
+  {
+    return nupa_init(self);
+  }
+}
+
+void NPObject_dealloc(NPObject * self, SEL _cmd) {
+  struct NPObject * _self = (struct NPObject *)self;
+  {
+    return;
+  }
+}
+
+void NPObject_release(NPObject * self, SEL _cmd) {
+  struct NPObject * _self = (struct NPObject *)self;
+  {
+    nupa_release(self);
+  }
+}
+
+NPObject * NPObject_retain(NPObject * self, SEL _cmd) {
+  struct NPObject * _self = (struct NPObject *)self;
+  {
+    return nupa_retain(self);
+  }
+}
+
+void Holder_put_(NPObject * self, SEL _cmd, NPObject * item) {
+  struct Holder * _self = (struct Holder *)self;
+  {
+    if ((_self->_count < 4))     _self->_data[_self->_count++] = item;
+  }
+}
+
+NPObject * Holder_get(NPObject * self, SEL _cmd) {
+  struct Holder * _self = (struct Holder *)self;
+  {
+    if ((_self->_count > 0))     return _self->_data[--_self->_count];
+    return 0;
+  }
+}
+
+NPObject * nupa_alloc(struct NPClass * cls);
+
+NPObject * nupa_init(NPObject * self);
+
+void nupa_release(NPObject * obj);
+
+NPObject * nupa_retain(NPObject * obj);
+
+int main(void) {
+  nupa_meta_init();
+  {
+    NPObject *__nupa_tmp_0 = (NPObject_alloc(&nupa_Holder_class, sel_registerName("alloc")));
+    Holder_Item_ptr * holder = ((struct nupa_NPObject_vtable *)__nupa_tmp_0->isa->vtable)->init(__nupa_tmp_0, sel_registerName("init"));
+    NPObject *__nupa_tmp_1 = (NPObject_alloc(&nupa_Item_class, sel_registerName("alloc")));
+    Item * r = ((struct nupa_NPObject_vtable *)__nupa_tmp_1->isa->vtable)->init(__nupa_tmp_1, sel_registerName("init"));
+    ((struct nupa_Holder_vtable *)((NPObject *)(holder))->isa->vtable)->put_(holder, sel_registerName("put:"), r);
+    Item * r2 = ((struct nupa_Holder_vtable *)((NPObject *)(holder))->isa->vtable)->get(holder, sel_registerName("get"));
+    printf("Holder<Item*> works: %p\n", (void *)r2);
+  }
+  return 0;
+}
+
+void Holder_Item_ptr_put_(Item * self, SEL _cmd, Item * item) {
+  struct Holder_Item_ptr * _self = (struct Holder_Item_ptr *)self;
+  {
+    if ((_self->_count < 4))     _self->_data[_self->_count++] = item;
+  }
+}
+
+Item * Holder_Item_ptr_get(Item * self, SEL _cmd) {
+  struct Holder_Item_ptr * _self = (struct Holder_Item_ptr *)self;
+  {
+    if ((_self->_count > 0))     return _self->_data[--_self->_count];
+    return 0;
+  }
+}
+

@@ -9,6 +9,7 @@ pub struct Elaborator {
     pub has_error: bool,
     pub err_msg: String,
     pub ns_prefix: String,
+    pub verbose: bool,
 }
 
 impl Elaborator {
@@ -16,6 +17,7 @@ impl Elaborator {
         Elaborator {
             symtab, result: None, current_class_sym: None,
             has_error: false, err_msg: String::new(), ns_prefix: String::new(),
+            verbose: false,
         }
     }
 
@@ -577,7 +579,16 @@ impl Elaborator {
                             })
                     }).or_else(|| superclass.clone())
                 });
-                let mut ad = AstDecl { kind: AstDeclKind::Class, line, col, name: Some(self.ns_fqn(cd.name.as_deref().unwrap_or(""))), data: AstDeclData::Class { cls_sym: cls_sym_clone, super_name: sup_name, methods: methods.iter().filter_map(|m| self.convert_decl(m)).collect(), ivars: ivars.iter().filter_map(|iv| self.convert_decl(iv)).collect(), properties: properties.iter().filter_map(|p| self.convert_decl(p)).collect(), impl_vars: impl_vars.iter().filter_map(|v| self.convert_decl(v)).collect() } };
+                let mut all_properties = Vec::new();
+                for p in properties.iter() {
+                    all_properties.push(p.clone());
+                    let mut cur = p.next.as_ref().map(|n| n.as_ref());
+                    while let Some(np) = cur {
+                        all_properties.push(np.clone());
+                        cur = np.next.as_ref().map(|n| n.as_ref());
+                    }
+                }
+                let mut ad = AstDecl { kind: AstDeclKind::Class, line, col, name: Some(self.ns_fqn(cd.name.as_deref().unwrap_or(""))), data: AstDeclData::Class { cls_sym: cls_sym_clone, super_name: sup_name, methods: methods.iter().filter_map(|m| self.convert_decl(m)).collect(), ivars: ivars.iter().filter_map(|iv| self.convert_decl(iv)).collect(), properties: all_properties.iter().filter_map(|p| self.convert_decl(p)).collect(), impl_vars: impl_vars.iter().filter_map(|v| self.convert_decl(v)).collect() } };
                 if let AstDeclData::Class { ref mut methods, .. } = ad.data {
                     if let Some(ref st) = self.symtab {
                         if let Some(ref cls_name) = cls_sym {
@@ -699,7 +710,7 @@ impl Elaborator {
                 .map(|s| s.name.clone())
                 .collect();
             for cls_name in class_names {
-                Self::elaborate_class(st, &cls_name);
+                Self::elaborate_class(st, &cls_name, self.verbose);
             }
         }
 
@@ -712,7 +723,7 @@ impl Elaborator {
         if self.has_error { -1 } else { 0 }
     }
 
-    fn elaborate_class(st: &mut SymbolTable, cls_name: &str) {
+    fn elaborate_class(st: &mut SymbolTable, cls_name: &str, verbose: bool) {
         let cls = st.find_class(cls_name);
         let cls = match cls { Some(c) => c.clone(), None => return };
         let prop_names: Vec<String> = match &cls.data {
@@ -723,7 +734,7 @@ impl Elaborator {
         for prop_name in &prop_names {
             // Find the property symbol in global scope
             let prop_sym = st.global.symbols.iter().find(|s| s.name == *prop_name && s.kind == SymbolKind::Property);
-            eprintln!("DBG elaborate_class {:?} prop_name={:?} found_sym={:?}", cls_name, prop_name, prop_sym.is_some());
+            if verbose { eprintln!("DBG elaborate_class {:?} prop_name={:?} found_sym={:?}", cls_name, prop_name, prop_sym.is_some()); }
             let prop_sym = match prop_sym { Some(s) => s.clone(), None => continue };
             let prop_type = match &prop_sym.data {
                 SymbolData::Property { prop_type, is_dynamic, .. } => {

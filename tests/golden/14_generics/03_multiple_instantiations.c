@@ -3,51 +3,77 @@
 #include <stdint.h>
 #include <stddef.h>
 #include "nupa/runtime.h"
-
-
-#include <string.h>
-
+struct nupa___nupa_root_vtable;
 struct nupa_NPObject_vtable;
+struct nupa_NPObject_meta_vtable;
 struct nupa_Buffer_vtable;
-
-#define nupa_NPObject_vtable_index_init 2
-#define nupa_NPObject_vtable_index_dealloc 3
-#define nupa_Buffer_vtable_index_add_ 4
-#define nupa_Buffer_vtable_index_get 5
+struct nupa_Buffer_meta_vtable;
+struct nupa_Buffer_A_ptr_vtable;
+struct nupa_Buffer_A_ptr_meta_vtable;
+struct nupa_Buffer_B_ptr_vtable;
+struct nupa_Buffer_B_ptr_meta_vtable;
+struct nupa_A_vtable;
+struct nupa_A_meta_vtable;
+struct nupa_B_vtable;
+struct nupa_B_meta_vtable;
 
 static const SEL __nupa_sel_init = {.name = "init", .hash = 0x16B1D373};
+static const SEL __nupa_sel_dealloc = {.name = "dealloc", .hash = 0xD9929EB3};
+static const SEL __nupa_sel_release = {.name = "release", .hash = 0x1036AE7E};
+static const SEL __nupa_sel_retain = {.name = "retain", .hash = 0x88BCC57C};
 static const SEL __nupa_sel_alloc = {.name = "alloc", .hash = 0xBAB1BB16};
+static const SEL __nupa_sel_new = {.name = "new", .hash = 0x28999611};
+static const SEL __nupa_sel_add_ = {.name = "add:", .hash = 0x88D7D0CA};
+static const SEL __nupa_sel_get = {.name = "get", .hash = 0x540CA757};
 
+typedef struct __nupa_root __nupa_root;
 typedef struct NPObject NPObject;
 typedef struct Buffer Buffer;
+typedef struct Buffer_A_ptr Buffer_A_ptr;
+typedef struct Buffer_B_ptr Buffer_B_ptr;
 typedef struct A A;
 typedef struct B B;
 
-
-
+NPObject * __nupa_root_init(NPObject * self, SEL _cmd);
+void __nupa_root_dealloc(NPObject * self, SEL _cmd);
+void __nupa_root_release(NPObject * self, SEL _cmd);
+NPObject * __nupa_root_retain(NPObject * self, SEL _cmd);
 NPObject * NPObject_alloc(NPClass * self, SEL _cmd);
 NPObject * NPObject_new(NPClass * self, SEL _cmd);
 NPObject * NPObject_init(NPObject * self, SEL _cmd);
 void NPObject_dealloc(NPObject * self, SEL _cmd);
-NPClass * NPObject_getClass(NPClass * self, SEL _cmd);
+void NPObject_release(NPObject * self, SEL _cmd);
+NPObject * NPObject_retain(NPObject * self, SEL _cmd);
 void Buffer_add_(NPObject * self, SEL _cmd, NPObject * item);
 NPObject * Buffer_get(NPObject * self, SEL _cmd);
+NPObject * nupa_alloc(struct NPClass * cls);
+NPObject * nupa_init(NPObject * self);
+void nupa_release(NPObject * obj);
+NPObject * nupa_retain(NPObject * obj);
+int main(void);
+void Buffer_A_ptr_add_(A * self, SEL _cmd, A * item);
+A * Buffer_A_ptr_get(A * self, SEL _cmd);
+void Buffer_B_ptr_add_(B * self, SEL _cmd, B * item);
+B * Buffer_B_ptr_get(B * self, SEL _cmd);
+
+NPClass * NPObject_getClass(NPClass * self, SEL _cmd);
 NPClass * Buffer_getClass(NPClass * self, SEL _cmd);
+NPClass * Buffer_A_ptr_getClass(NPClass * self, SEL _cmd);
+NPClass * Buffer_B_ptr_getClass(NPClass * self, SEL _cmd);
 NPClass * A_getClass(NPClass * self, SEL _cmd);
 NPClass * B_getClass(NPClass * self, SEL _cmd);
-int main();
 
-extern NPClass nupa_NPObject_class;
-extern NPClass nupa_Buffer_class;
-extern NPClass nupa_A_class;
-extern NPClass nupa_B_class;
-void nupa_meta_init(void);
-
-// struct NPClass defined in runtime.h
-// struct NPObject defined in runtime.h
+struct nupa___nupa_root_vtable {
+    NPObject * (*init)(NPObject *, SEL);
+    void (*dealloc)(NPObject *, SEL);
+    void (*release)(NPObject *, SEL);
+    NPObject * (*retain)(NPObject *, SEL);
+};
 struct nupa_NPObject_vtable {
     NPObject * (*init)(NPObject *, SEL);
     void (*dealloc)(NPObject *, SEL);
+    void (*release)(NPObject *, SEL);
+    NPObject * (*retain)(NPObject *, SEL);
 };
 struct nupa_NPObject_meta_vtable {
     NPObject * (*alloc)(NPClass *, SEL);
@@ -57,142 +83,169 @@ struct nupa_NPObject_meta_vtable {
 struct nupa_Buffer_vtable {
     NPObject * (*init)(NPObject *, SEL);
     void (*dealloc)(NPObject *, SEL);
+    void (*release)(NPObject *, SEL);
+    NPObject * (*retain)(NPObject *, SEL);
     void (*add_)(NPObject *, SEL, NPObject *);
     NPObject * (*get)(NPObject *, SEL);
 };
 struct nupa_Buffer_meta_vtable {
+    NPObject * (*alloc)(NPClass *, SEL);
+    NPObject * (*new)(NPClass *, SEL);
     NPClass * (*class)(NPClass *, SEL);
 };
+struct nupa_Buffer_A_ptr_vtable {
+    NPObject * (*init)(NPObject *, SEL);
+    void (*dealloc)(NPObject *, SEL);
+    void (*release)(NPObject *, SEL);
+    NPObject * (*retain)(NPObject *, SEL);
+    void (*add_)(A *, SEL, A *);
+    A * (*get)(A *, SEL);
+};
+struct nupa_Buffer_A_ptr_meta_vtable {
+    NPObject * (*alloc)(NPClass *, SEL);
+    NPObject * (*new)(NPClass *, SEL);
+    NPClass * (*class)(NPClass *, SEL);
+};
+struct nupa_Buffer_B_ptr_vtable {
+    NPObject * (*init)(NPObject *, SEL);
+    void (*dealloc)(NPObject *, SEL);
+    void (*release)(NPObject *, SEL);
+    NPObject * (*retain)(NPObject *, SEL);
+    void (*add_)(B *, SEL, B *);
+    B * (*get)(B *, SEL);
+};
+struct nupa_Buffer_B_ptr_meta_vtable {
+    NPObject * (*alloc)(NPClass *, SEL);
+    NPObject * (*new)(NPClass *, SEL);
+    NPClass * (*class)(NPClass *, SEL);
+};
+struct nupa_A_vtable {
+    NPObject * (*init)(NPObject *, SEL);
+    void (*dealloc)(NPObject *, SEL);
+    void (*release)(NPObject *, SEL);
+    NPObject * (*retain)(NPObject *, SEL);
+};
+struct nupa_A_meta_vtable {
+    NPObject * (*alloc)(NPClass *, SEL);
+    NPObject * (*new)(NPClass *, SEL);
+    NPClass * (*class)(NPClass *, SEL);
+};
+struct nupa_B_vtable {
+    NPObject * (*init)(NPObject *, SEL);
+    void (*dealloc)(NPObject *, SEL);
+    void (*release)(NPObject *, SEL);
+    NPObject * (*retain)(NPObject *, SEL);
+};
+struct nupa_B_meta_vtable {
+    NPObject * (*alloc)(NPClass *, SEL);
+    NPObject * (*new)(NPClass *, SEL);
+    NPClass * (*class)(NPClass *, SEL);
+};
+
+struct __nupa_root {
+    struct NPClass *isa;
+    uint32_t retain_count;
+};
+typedef struct __nupa_root __nupa_root;
+
+struct Buffer {
+    struct NPClass *isa;
+    uint32_t retain_count;
+    NPObject * _data[2];
+    int _len;
+};
+typedef struct Buffer Buffer;
+
+struct Buffer_A_ptr {
+    struct NPClass *isa;
+    uint32_t retain_count;
+    A * _data[2];
+    int _len;
+};
+typedef struct Buffer_A_ptr Buffer_A_ptr;
+
+struct Buffer_B_ptr {
+    struct NPClass *isa;
+    uint32_t retain_count;
+    B * _data[2];
+    int _len;
+};
+typedef struct Buffer_B_ptr Buffer_B_ptr;
+
 struct A {
     struct NPClass *isa;
     uint32_t retain_count;
 };
 typedef struct A A;
-struct nupa_A_vtable {
-    NPObject * (*init)(NPObject *, SEL);
-    void (*dealloc)(NPObject *, SEL);
-};
-struct nupa_A_meta_vtable {
-    NPClass * (*class)(NPClass *, SEL);
-};
+
 struct B {
     struct NPClass *isa;
     uint32_t retain_count;
 };
 typedef struct B B;
-struct nupa_B_vtable {
-    NPObject * (*init)(NPObject *, SEL);
-    void (*dealloc)(NPObject *, SEL);
+
+extern NPClass nupa___nupa_root_class;
+extern NPClass nupa_NPObject_class;
+extern NPClass nupa_Buffer_class;
+extern NPClass nupa_Buffer_A_ptr_class;
+extern NPClass nupa_Buffer_B_ptr_class;
+extern NPClass nupa_A_class;
+extern NPClass nupa_B_class;
+void nupa_meta_init(void);
+
+struct nupa___nupa_root_vtable nupa___nupa_root_vtable_inst = {
+    .init = __nupa_root_init,
+    .dealloc = __nupa_root_dealloc,
+    .release = __nupa_root_release,
+    .retain = __nupa_root_retain,
 };
-struct nupa_B_meta_vtable {
-    NPClass * (*class)(NPClass *, SEL);
-};
-NPObject * NPObject_alloc(NPClass * self, SEL _cmd) {
-    return nupa_alloc(self);
-}
-
-NPObject * NPObject_new(NPClass * self, SEL _cmd) {
-    NPObject * obj = nupa_alloc(self);
-    return nupa_init(obj);
-}
-
-NPObject * NPObject_init(NPObject * self, SEL _cmd) {
-    struct NPObject * _self = ((struct NPObject *)(self));
-    {
-        return nupa_init(self);
-    }
-}
-
-void NPObject_dealloc(NPObject * self, SEL _cmd) {
-    struct NPObject * _self = ((struct NPObject *)(self));
-    {
-        return;
-    }
-}
-
-NPClass * NPObject_getClass(NPClass * self, SEL _cmd) {
-    return &nupa_NPObject_class;
-}
-
-NPObject * nupa_alloc(struct NPClass * cls);
-NPObject * nupa_init(NPObject * );
-void Buffer_add_(NPObject * self, SEL _cmd, NPObject * item) {
-    struct Buffer * _self = ((struct Buffer *)(self));
-    {
-        if (((struct Buffer *)(self))->_len < 2) {
-            ((struct Buffer *)(self))->_data[((struct Buffer *)(self))->_len++] = item;
-        }
-    }
-}
-
-NPObject * Buffer_get(NPObject * self, SEL _cmd) {
-    struct Buffer * _self = ((struct Buffer *)(self));
-    {
-        if (((struct Buffer *)(self))->_len > 0) {
-            {
-                ((struct Buffer *)(self))->_len--;
-                T;
-                ((struct Buffer *)(self))->_data[((struct Buffer *)(self))->_len] = 0;
-                return item;
-            }
-        }
-        return 0;
-    }
-}
-
-NPClass * Buffer_getClass(NPClass * self, SEL _cmd) {
-    return &nupa_Buffer_class;
-}
-
-NPClass * A_getClass(NPClass * self, SEL _cmd) {
-    return &nupa_A_class;
-}
-
-NPClass * B_getClass(NPClass * self, SEL _cmd) {
-    return &nupa_B_class;
-}
-
-int main() {
-    nupa_autoreleasepool_t *__pool = nupa_autoreleasepool_push();
-    nupa_meta_init();
-    {
-        nupa_autoreleasepool_t * __pool = nupa_autoreleasepool_push();
-        {
-            NPObject *__nupa_tmp_0 = (NPObject_alloc(&nupa_Buffer_class, __nupa_sel_alloc));
-            Buffer * aBuf = ((struct nupa_NPObject_vtable *)__nupa_tmp_0->isa->vtable)->init(__nupa_tmp_0, __nupa_sel_init);
-            NPObject *__nupa_tmp_1 = (NPObject_alloc(&nupa_Buffer_class, __nupa_sel_alloc));
-            Buffer * bBuf = ((struct nupa_NPObject_vtable *)__nupa_tmp_1->isa->vtable)->init(__nupa_tmp_1, __nupa_sel_init);
-            printf("Two instantiations of Buffer exist\n");
-        }
-        nupa_autoreleasepool_pop(__pool);
-    }
-    return 0;
-    nupa_autoreleasepool_pop(__pool);
-}
-
-
-// ─── Class metadata ─────────────────────────────────────
 
 struct nupa_NPObject_vtable nupa_NPObject_vtable_inst = {
     .init = NPObject_init,
     .dealloc = NPObject_dealloc,
+    .release = NPObject_release,
+    .retain = NPObject_retain,
 };
 
 struct nupa_Buffer_vtable nupa_Buffer_vtable_inst = {
     .init = NPObject_init,
     .dealloc = NPObject_dealloc,
+    .release = NPObject_release,
+    .retain = NPObject_retain,
     .add_ = Buffer_add_,
     .get = Buffer_get,
+};
+
+struct nupa_Buffer_A_ptr_vtable nupa_Buffer_A_ptr_vtable_inst = {
+    .init = NPObject_init,
+    .dealloc = NPObject_dealloc,
+    .release = NPObject_release,
+    .retain = NPObject_retain,
+    .add_ = Buffer_A_ptr_add_,
+    .get = Buffer_A_ptr_get,
+};
+
+struct nupa_Buffer_B_ptr_vtable nupa_Buffer_B_ptr_vtable_inst = {
+    .init = NPObject_init,
+    .dealloc = NPObject_dealloc,
+    .release = NPObject_release,
+    .retain = NPObject_retain,
+    .add_ = Buffer_B_ptr_add_,
+    .get = Buffer_B_ptr_get,
 };
 
 struct nupa_A_vtable nupa_A_vtable_inst = {
     .init = NPObject_init,
     .dealloc = NPObject_dealloc,
+    .release = NPObject_release,
+    .retain = NPObject_retain,
 };
 
 struct nupa_B_vtable nupa_B_vtable_inst = {
     .init = NPObject_init,
     .dealloc = NPObject_dealloc,
+    .release = NPObject_release,
+    .retain = NPObject_retain,
 };
 
 struct nupa_NPObject_meta_vtable nupa_NPObject_meta_vtable_inst = {
@@ -202,26 +255,85 @@ struct nupa_NPObject_meta_vtable nupa_NPObject_meta_vtable_inst = {
 };
 
 struct nupa_Buffer_meta_vtable nupa_Buffer_meta_vtable_inst = {
+    .alloc = NPObject_alloc,
+    .new = NPObject_new,
     .class = Buffer_getClass,
 };
 
+struct nupa_Buffer_A_ptr_meta_vtable nupa_Buffer_A_ptr_meta_vtable_inst = {
+    .alloc = NPObject_alloc,
+    .new = NPObject_new,
+    .class = Buffer_A_ptr_getClass,
+};
+
+struct nupa_Buffer_B_ptr_meta_vtable nupa_Buffer_B_ptr_meta_vtable_inst = {
+    .alloc = NPObject_alloc,
+    .new = NPObject_new,
+    .class = Buffer_B_ptr_getClass,
+};
+
 struct nupa_A_meta_vtable nupa_A_meta_vtable_inst = {
+    .alloc = NPObject_alloc,
+    .new = NPObject_new,
     .class = A_getClass,
 };
 
 struct nupa_B_meta_vtable nupa_B_meta_vtable_inst = {
+    .alloc = NPObject_alloc,
+    .new = NPObject_new,
     .class = B_getClass,
 };
 
+NPClass * NPObject_getClass(NPClass * self, SEL _cmd) {
+    (void)_cmd;
+    return self;
+}
+
+NPClass * Buffer_getClass(NPClass * self, SEL _cmd) {
+    (void)_cmd;
+    return self;
+}
+
+NPClass * Buffer_A_ptr_getClass(NPClass * self, SEL _cmd) {
+    (void)_cmd;
+    return self;
+}
+
+NPClass * Buffer_B_ptr_getClass(NPClass * self, SEL _cmd) {
+    (void)_cmd;
+    return self;
+}
+
+NPClass * A_getClass(NPClass * self, SEL _cmd) {
+    (void)_cmd;
+    return self;
+}
+
+NPClass * B_getClass(NPClass * self, SEL _cmd) {
+    (void)_cmd;
+    return self;
+}
+
+NPClass nupa___nupa_root_class;
 NPClass nupa_NPObject_class;
 NPClass nupa_Buffer_class;
+NPClass nupa_Buffer_A_ptr_class;
+NPClass nupa_Buffer_B_ptr_class;
 NPClass nupa_A_class;
 NPClass nupa_B_class;
 
 void nupa_meta_init(void) {
+    nupa___nupa_root_class = (NPClass){
+        .name = "__nupa_root",
+        .superclass = NULL,
+        .instance_size = sizeof(struct __nupa_root),
+        .vtable = &nupa___nupa_root_vtable_inst,
+        .class_vtable = NULL,
+        .protocol_count = 0,
+    };
     nupa_NPObject_class = (NPClass){
         .name = "NPObject",
-        .superclass = NULL,
+        .superclass = &nupa___nupa_root_class,
         .instance_size = sizeof(struct NPObject),
         .vtable = &nupa_NPObject_vtable_inst,
         .class_vtable = &nupa_NPObject_meta_vtable_inst,
@@ -233,6 +345,22 @@ void nupa_meta_init(void) {
         .instance_size = sizeof(struct Buffer),
         .vtable = &nupa_Buffer_vtable_inst,
         .class_vtable = &nupa_Buffer_meta_vtable_inst,
+        .protocol_count = 0,
+    };
+    nupa_Buffer_A_ptr_class = (NPClass){
+        .name = "Buffer<A *>",
+        .superclass = &nupa_NPObject_class,
+        .instance_size = sizeof(struct Buffer_A_ptr),
+        .vtable = &nupa_Buffer_A_ptr_vtable_inst,
+        .class_vtable = &nupa_Buffer_A_ptr_meta_vtable_inst,
+        .protocol_count = 0,
+    };
+    nupa_Buffer_B_ptr_class = (NPClass){
+        .name = "Buffer<B *>",
+        .superclass = &nupa_NPObject_class,
+        .instance_size = sizeof(struct Buffer_B_ptr),
+        .vtable = &nupa_Buffer_B_ptr_vtable_inst,
+        .class_vtable = &nupa_Buffer_B_ptr_meta_vtable_inst,
         .protocol_count = 0,
     };
     nupa_A_class = (NPClass){
@@ -252,3 +380,148 @@ void nupa_meta_init(void) {
         .protocol_count = 0,
     };
 }
+NPObject * __nupa_root_init(NPObject * self, SEL _cmd) {
+  struct __nupa_root * _self = (struct __nupa_root *)self;
+  {
+    return nupa_init(self);
+  }
+}
+
+void __nupa_root_dealloc(NPObject * self, SEL _cmd) {
+  struct __nupa_root * _self = (struct __nupa_root *)self;
+  {
+    return;
+  }
+}
+
+void __nupa_root_release(NPObject * self, SEL _cmd) {
+  struct __nupa_root * _self = (struct __nupa_root *)self;
+  {
+    nupa_release(self);
+  }
+}
+
+NPObject * __nupa_root_retain(NPObject * self, SEL _cmd) {
+  struct __nupa_root * _self = (struct __nupa_root *)self;
+  {
+    return nupa_retain(self);
+  }
+}
+
+NPObject * NPObject_alloc(NPClass * self, SEL _cmd) {
+  return nupa_alloc(self);
+}
+
+NPObject * NPObject_new(NPClass * self, SEL _cmd) {
+  NPObject * obj = nupa_alloc(self);
+  return nupa_init(obj);
+}
+
+NPObject * NPObject_init(NPObject * self, SEL _cmd) {
+  struct NPObject * _self = (struct NPObject *)self;
+  {
+    return nupa_init(self);
+  }
+}
+
+void NPObject_dealloc(NPObject * self, SEL _cmd) {
+  struct NPObject * _self = (struct NPObject *)self;
+  {
+    return;
+  }
+}
+
+void NPObject_release(NPObject * self, SEL _cmd) {
+  struct NPObject * _self = (struct NPObject *)self;
+  {
+    nupa_release(self);
+  }
+}
+
+NPObject * NPObject_retain(NPObject * self, SEL _cmd) {
+  struct NPObject * _self = (struct NPObject *)self;
+  {
+    return nupa_retain(self);
+  }
+}
+
+void Buffer_add_(NPObject * self, SEL _cmd, NPObject * item) {
+  struct Buffer * _self = (struct Buffer *)self;
+  {
+    if ((_self->_len < 2))     _self->_data[_self->_len++] = item;
+  }
+}
+
+NPObject * Buffer_get(NPObject * self, SEL _cmd) {
+  struct Buffer * _self = (struct Buffer *)self;
+  {
+    if ((_self->_len > 0))     {
+      _self->_len--;
+      NPObject * item = _self->_data[_self->_len];
+      _self->_data[_self->_len] = 0;
+      return item;
+    }
+    return 0;
+  }
+}
+
+NPObject * nupa_alloc(struct NPClass * cls);
+
+NPObject * nupa_init(NPObject * self);
+
+void nupa_release(NPObject * obj);
+
+NPObject * nupa_retain(NPObject * obj);
+
+int main(void) {
+  nupa_meta_init();
+  {
+    NPObject *__nupa_tmp_0 = (NPObject_alloc(&nupa_Buffer_class, sel_registerName("alloc")));
+    Buffer_A_ptr * aBuf = ((struct nupa_NPObject_vtable *)__nupa_tmp_0->isa->vtable)->init(__nupa_tmp_0, sel_registerName("init"));
+    NPObject *__nupa_tmp_1 = (NPObject_alloc(&nupa_Buffer_class, sel_registerName("alloc")));
+    Buffer_B_ptr * bBuf = ((struct nupa_NPObject_vtable *)__nupa_tmp_1->isa->vtable)->init(__nupa_tmp_1, sel_registerName("init"));
+    printf("Two instantiations of Buffer exist\n");
+  }
+  return 0;
+}
+
+void Buffer_A_ptr_add_(A * self, SEL _cmd, A * item) {
+  struct Buffer_A_ptr * _self = (struct Buffer_A_ptr *)self;
+  {
+    if ((_self->_len < 2))     _self->_data[_self->_len++] = item;
+  }
+}
+
+A * Buffer_A_ptr_get(A * self, SEL _cmd) {
+  struct Buffer_A_ptr * _self = (struct Buffer_A_ptr *)self;
+  {
+    if ((_self->_len > 0))     {
+      _self->_len--;
+      A * item = _self->_data[_self->_len];
+      _self->_data[_self->_len] = 0;
+      return item;
+    }
+    return 0;
+  }
+}
+
+void Buffer_B_ptr_add_(B * self, SEL _cmd, B * item) {
+  struct Buffer_B_ptr * _self = (struct Buffer_B_ptr *)self;
+  {
+    if ((_self->_len < 2))     _self->_data[_self->_len++] = item;
+  }
+}
+
+B * Buffer_B_ptr_get(B * self, SEL _cmd) {
+  struct Buffer_B_ptr * _self = (struct Buffer_B_ptr *)self;
+  {
+    if ((_self->_len > 0))     {
+      _self->_len--;
+      B * item = _self->_data[_self->_len];
+      _self->_data[_self->_len] = 0;
+      return item;
+    }
+    return 0;
+  }
+}
+

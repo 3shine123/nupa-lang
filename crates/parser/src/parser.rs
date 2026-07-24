@@ -14,6 +14,7 @@ pub struct Parser<'a> {
     type_params: Vec<String>,
     macro_names: Vec<String>,
     macro_values: Vec<String>,
+    generic_class_names: Vec<String>,
 }
 
 impl<'a> Parser<'a> {
@@ -47,6 +48,7 @@ impl<'a> Parser<'a> {
             type_params: Vec::new(),
             macro_names: Vec::new(),
             macro_values: Vec::new(),
+            generic_class_names: Vec::new(),
         }
     }
 
@@ -185,6 +187,10 @@ impl<'a> Parser<'a> {
         self.type_params.iter().any(|n| n == name)
     }
 
+    fn is_generic_class(&self, name: &str) -> bool {
+        self.generic_class_names.iter().any(|n| n == name)
+    }
+
     fn add_macro(&mut self, name: &str, value: &str) {
         self.macro_names.push(name.to_string());
         self.macro_values.push(value.to_string());
@@ -236,7 +242,7 @@ impl<'a> Parser<'a> {
             else { false }
         } {}
 
-        if self.match_keyword(KeywordKind::Unsigned) { t.prim = TypePrim::Signed; }
+        if self.match_keyword(KeywordKind::Unsigned) { t.prim = TypePrim::Unsigned; }
         else if self.match_keyword(KeywordKind::Signed) { t.prim = TypePrim::Signed; }
 
         if self.match_keyword(KeywordKind::Long) {
@@ -311,22 +317,37 @@ impl<'a> Parser<'a> {
         if matches!(t.prim, TypePrim::Id | TypePrim::Named | TypePrim::Class | TypePrim::Instancetype) {
             if self.match_token(TokenKind::Less) {
                 let mut is_protocol = false;
-                if t.prim == TypePrim::Id && self.current.kind == TokenKind::Identifier {
-                    let mut protocols = Vec::new();
-                    let mut protocol_ok = true;
-                    loop {
-                        if self.current.kind != TokenKind::Identifier {
-                            protocol_ok = false;
-                            break;
-                        }
-                        protocols.push(self.current_text().to_string());
-                        self.advance();
-                        if !self.match_token(TokenKind::Comma) { break; }
+                if self.current.kind == TokenKind::Identifier {
+                    let mut is_generic = false;
+                    if t.prim == TypePrim::Id {
+                        is_generic = false; // id<P> always protocols
+                    } else if let Some(ref name) = t.name {
+                        // Check both the fully qualified name and the simple name
+                        // (e.g. "System::IO::Buffer" should match registered "Buffer")
+                        is_generic = self.is_generic_class(name)
+                            || name.rsplit("::").next().map_or(false, |s| self.is_generic_class(s));
                     }
-                    if protocol_ok && self.current.kind == TokenKind::Greater {
-                        self.advance();
-                        t.protocols = protocols;
-                        is_protocol = true;
+                    if !is_generic {
+                        // Protocols path: <Proto1, Proto2>
+                        let mut protocols = Vec::new();
+                        let mut protocol_ok = true;
+                        loop {
+                            if self.current.kind != TokenKind::Identifier {
+                                protocol_ok = false;
+                                break;
+                            }
+                            protocols.push(self.current_text().to_string());
+                            self.advance();
+                            if !self.match_token(TokenKind::Comma) { break; }
+                        }
+                        if protocol_ok && self.current.kind == TokenKind::Greater {
+                            self.advance();
+                            if t.prim == TypePrim::Id || t.prim == TypePrim::Named ||
+                               t.prim == TypePrim::Class || t.prim == TypePrim::Instancetype {
+                                t.protocols = protocols;
+                                is_protocol = true;
+                            }
+                        }
                     }
                 }
                 if !is_protocol {
@@ -444,11 +465,22 @@ impl<'a> Parser<'a> {
     fn type_to_fqn(t: &CstType) -> String {
         let mut s = String::new();
         match t.prim {
+            TypePrim::Void => s.push_str("void"),
+            TypePrim::Char => s.push_str("char"),
+            TypePrim::Short => s.push_str("short"),
+            TypePrim::Int => s.push_str("int"),
+            TypePrim::Long => s.push_str("long"),
+            TypePrim::LongLong => s.push_str("long long"),
+            TypePrim::Float => s.push_str("float"),
+            TypePrim::Double => s.push_str("double"),
+            TypePrim::Bool => s.push_str("_Bool"),
+            TypePrim::Signed => s.push_str("signed"),
+            TypePrim::Unsigned => s.push_str("unsigned"),
             TypePrim::Id => s.push_str("id"),
             TypePrim::Class => s.push_str("Class"),
             TypePrim::Sel => s.push_str("SEL"),
             TypePrim::Instancetype => s.push_str("instancetype"),
-            _ => {
+            TypePrim::Named | TypePrim::Param => {
                 if let Some(ref n) = t.name {
                     s.push_str(n);
                 }
@@ -728,7 +760,13 @@ impl<'a> Parser<'a> {
                     if (!t.type_args.is_empty() || !t.protocols.is_empty())
                         && self.current.kind == TokenKind::Identifier {
                         // Type receiver confirmed — build ident expr from rendered type.
-                        let rstr = Self::type_to_fqn(&t);
+                        // For protocols-only (e.g. NPObject<P>), use base class name
+                        // to avoid codegen interpreting <P> as generic args.
+                        let rstr = if !t.type_args.is_empty() {
+                            Self::type_to_fqn(&t)
+                        } else {
+                            t.name.clone().unwrap_or_else(|| Self::type_to_fqn(&t))
+                        };
                         receiver = Some(CstExpr {
                             kind: CstExprKind::Ident, expr_type: None,
                             line: self.previous.line, col: self.previous.column,
@@ -2667,6 +2705,11 @@ impl<'a> Parser<'a> {
             self.consume(TokenKind::Greater, "expected '>' after type params");
         }
 
+        // Register class as generic if it has type params
+        if !type_params.is_empty() && !self.generic_class_names.contains(&name) {
+            self.generic_class_names.push(name.clone());
+        }
+
         // Superclass: : SuperClassName (may be a qualified name like Engine::Graphics::RenderNode)
         let mut superclass = None;
         if self.match_token(TokenKind::Colon) {
@@ -2900,8 +2943,16 @@ impl<'a> Parser<'a> {
                 continue;
             }
             // Check for variable declarations inside @implementation
-            // (e.g., static globals used by categories)
-            if self.is_declaration_start() {
+            // (e.g., static globals used by categories).
+            // But if the current token is + or - (method type indicators),
+            // try parse_method first to avoid confusing method return types
+            // (like int, void, BOOL) with declaration starts.
+            if self.current.kind == TokenKind::Plus || self.current.kind == TokenKind::Minus {
+                if let Some(method) = self.parse_method() {
+                    methods.push(method);
+                    continue;
+                }
+            } else if self.is_declaration_start() {
                 if let Some(decl) = self.parse_declaration() {
                     impl_vars.push(decl);
                     continue;
@@ -3002,6 +3053,54 @@ impl<'a> Parser<'a> {
                 }
                 self.consume(TokenKind::RBracket, "expected ']' after array size");
                 prop_type = Some(arr_type);
+            }
+            // Check for comma-separated names
+            if self.match_token(TokenKind::Comma) {
+                // Parse additional names with the same type
+                let mut head = CstDecl {
+                    kind: CstDeclKind::Property,
+                    line: self.previous.line, column: self.previous.column,
+                    name: Some(name),
+                    next: None,
+                    data: CstDeclData::Property {
+                        prop_type: prop_type.clone().map(Box::new),
+                        getter: getter.clone(),
+                        setter: setter.clone(),
+                        is_readonly,
+                        is_weak,
+                        is_assign,
+                        is_retain,
+                        is_copy,
+                        is_nonatomic,
+                        is_dynamic: false,
+                    },
+                };
+                let mut tail = &mut head;
+                while self.match_name() {
+                    let nname = self.previous_text().to_string();
+                    tail.next = Some(Box::new(CstDecl {
+                        kind: CstDeclKind::Property,
+                        line: self.previous.line, column: self.previous.column,
+                        name: Some(nname),
+                        next: None,
+                        data: CstDeclData::Property {
+                            prop_type: prop_type.clone().map(Box::new),
+                            getter: getter.clone(),
+                            setter: setter.clone(),
+                            is_readonly,
+                            is_weak,
+                            is_assign,
+                            is_retain,
+                            is_copy,
+                            is_nonatomic,
+                            is_dynamic: false,
+                        },
+                    }));
+                    tail = tail.next.as_mut().unwrap();
+                    if !self.match_token(TokenKind::Comma) { break; }
+                }
+                self.consume(TokenKind::Semicolon, "expected ';' after @property");
+                return Some(head);
             }
             self.consume(TokenKind::Semicolon, "expected ';' after @property");
             return Some(CstDecl {
