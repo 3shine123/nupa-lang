@@ -1,6 +1,6 @@
 use std::fmt::Write;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::OnceLock;
+use std::sync::{Mutex, OnceLock};
 use std::collections::HashMap;
 use nupa_ast::*;
 use nupa_symbol::*;
@@ -11,6 +11,40 @@ static TEMP_VAR_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
 // ─── Global vtable method metadata (set during ast_to_cg_unit) ────────────
 static METHOD_METADATA: OnceLock<HashMap<String, (usize, String)>> = OnceLock::new();
+
+fn get_vtable_param_type(method_name: &str, param_index: usize) -> Option<String> {
+    METHOD_METADATA.get()
+        .and_then(|meta| meta.get(method_name))
+        .and_then(|(_, ptr_type)| {
+            // ptr_type is "return_type (*)(param1, param2, ...)"
+            // Block types like "void (^)(FSNode *, _Bool *)" contain commas, so
+            // we must split by comma at depth 0 (outside any nested parentheses).
+            let paren_start = ptr_type.find("(*)(")?;
+            let inner = &ptr_type[paren_start + 4..];
+            let paren_end = inner.rfind(')')?;
+            let params_str = &inner[..paren_end];
+            let mut params: Vec<String> = Vec::new();
+            let mut depth: i32 = 0;
+            let mut start = 0;
+            for (i, ch) in params_str.char_indices() {
+                match ch {
+                    '(' | '<' => depth += 1,
+                    ')' | '>' => depth -= 1,
+                    ',' if depth == 0 => {
+                        params.push(params_str[start..i].trim().to_string());
+                        start = i + 1;
+                    }
+                    _ => {}
+                }
+            }
+            let last = params_str[start..].trim();
+            if !last.is_empty() {
+                params.push(last.to_string());
+            }
+            params.get(param_index).cloned()
+        })
+}
+static BLOCK_TYPEDEF_NAMES: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
 
 fn next_temp_id() -> usize {
     TEMP_VAR_COUNTER.fetch_add(1, Ordering::SeqCst)
@@ -648,10 +682,10 @@ fn convert_expr(ae: &AstExpr, class_infos: &std::collections::BTreeMap<String, C
         return CgExpr { kind: CgExprKind::Ident, type_str, line, col, data: CgExprData::Ident("NULL".into()) };
     }
     if ae.kind == AstExprKind::Self_ {
-        return CgExpr { kind: CgExprKind::Ident, type_str, line, col, data: CgExprData::Ident("self".into()) };
+        return CgExpr { kind: CgExprKind::Ident, type_str: Some("NPObject *".into()), line, col, data: CgExprData::Ident("self".into()) };
     }
     if ae.kind == AstExprKind::Super {
-        return CgExpr { kind: CgExprKind::Ident, type_str, line, col, data: CgExprData::Ident("super".into()) };
+        return CgExpr { kind: CgExprKind::Ident, type_str: Some("NPObject *".into()), line, col, data: CgExprData::Ident("super".into()) };
     }
     if ae.kind == AstExprKind::BlockLit {
         // BlockLit is handled in the match below via AstExprData::Block
@@ -666,6 +700,13 @@ fn convert_expr(ae: &AstExpr, class_infos: &std::collections::BTreeMap<String, C
         AstExprData::IvarRef { ivar, obj, cls, .. } => {
             let field = ivar.clone().unwrap_or_default();
             let obj_cg = convert_expr(obj, &class_infos);
+            let ivar_type_str = cls.as_ref().and_then(|cls_name| {
+                let flat = name_flat(cls_name);
+                class_infos.get(&flat).and_then(|info| {
+                    info.ivar_names.iter().position(|n| n == &field).map(|idx| info.ivar_types[idx].clone())
+                })
+            });
+            let type_str = ivar_type_str.or(type_str);
             if let CgExprData::Ident(ref name) = obj_cg.data {
                 if name == "self" || name == "_self" {
                     if let Some(ref cls_name) = cls {
@@ -933,29 +974,53 @@ fn convert_expr(ae: &AstExpr, class_infos: &std::collections::BTreeMap<String, C
                 name.clone()
             };
             let mut auto_sel = None;
+            let mut auto_is_class = false;
             if callee.is_none() {
                 // Detect direct calls to NPObject method functions like
                 // `NPObject_release(obj)`, `NPObject_retain(obj)`, `NPObject_dealloc(obj)`.
-                auto_sel = if let Some(method) = call_name.strip_prefix("NPObject_") {
+                // Convert these to vtable dispatch so the normal vtable path handles
+                // arg casting (e.g. (NPObject *)(child)) instead of a bare C call.
+                if let Some(method) = call_name.strip_prefix("NPObject_") {
                     if !method.is_empty() && args.len() == 1 {
-                        Some(sel_const_name(method))
-                    } else { None }
-                } else { None };
+                        auto_sel = Some(sel_const_name(method));
+                        // Determine if class method (alloc/new) or instance method.
+                        auto_is_class = class_infos.get("NPObject")
+                            .map(|info| {
+                                info.method_names.iter()
+                                    .zip(info.is_class_methods.iter())
+                                    .any(|(nm, is_cm)| nm == method && *is_cm)
+                            })
+                            .unwrap_or(false);
+                    }
+                }
             }
             let mut cg_args: Vec<CgExpr> = args.iter().map(|a| convert_expr(a, &class_infos)).collect();
             if let Some(sel) = auto_sel {
-                cg_args.push(CgExpr {
-                    kind: CgExprKind::Ident, type_str: None, line, col,
-                    data: CgExprData::Ident(sel),
-                });
-            }
-            CgExpr {
-                kind: CgExprKind::Call, type_str, line, col,
-                data: CgExprData::Call {
-                    name: call_name, args: cg_args,
-                    vtable_class: None, alt_vtable_classes: vec![], is_class_method: false, is_super: false,
-                    sel_const_name: None, method_index: None,
-                },
+                // Convert NPObject_* calls to vtable dispatch by setting vtable_class,
+                // sel_const_name, and using the method name (without NPObject_ prefix).
+                let method = call_name.strip_prefix("NPObject_").unwrap();
+                CgExpr {
+                    kind: CgExprKind::Call, type_str, line, col,
+                    data: CgExprData::Call {
+                        name: method.to_string(),
+                        args: cg_args, // no SEL — emitted from sel_const_name
+                        vtable_class: Some("NPObject".to_string()),
+                        alt_vtable_classes: vec![],
+                        is_class_method: auto_is_class,
+                        is_super: false,
+                        sel_const_name: Some(sel),
+                        method_index: None,
+                    },
+                }
+            } else {
+                CgExpr {
+                    kind: CgExprKind::Call, type_str, line, col,
+                    data: CgExprData::Call {
+                        name: call_name, args: cg_args,
+                        vtable_class: None, alt_vtable_classes: vec![], is_class_method: false, is_super: false,
+                        sel_const_name: None, method_index: None,
+                    },
+                }
             }
         }
         AstExprData::Unary { op, operand, is_postfix } => {
@@ -1728,7 +1793,7 @@ fn convert_decl(ad: &AstDecl, class_infos: &std::collections::BTreeMap<String, C
             });
         }
         AstDeclKind::Typedef => {
-            let (alias_type_str, struct_fields, has_block_name) = match &ad.data {
+            let (mut alias_type_str, struct_fields, has_block_name) = match &ad.data {
                 AstDeclData::Typedef { aliased_type, struct_fields } => {
                     let mut alias_type_str = "int".to_string();
                     let mut has_block_name = false;
@@ -1754,14 +1819,9 @@ fn convert_decl(ad: &AstDecl, class_infos: &std::collections::BTreeMap<String, C
                 _ => ("int".into(), Vec::new(), false),
             };
             let flat_alias = name_flat(&name);
-            let alias = if has_block_name { String::new() } else { flat_alias.clone() };
-            result.push(CgDecl {
-                kind: CgDeclKind::Typedef, name: ad.name.clone().unwrap_or_default(),
-                data: CgDeclData::Typedef { alias, type_str: alias_type_str.clone(), struct_fields },
-            });
-            // For block typedefs, emit an alias from the flat (namespace-mangled) name
-            // to the short user-defined name, so fully-qualified references from outside
-            // the namespace resolve without duplicating the block type signature.
+            // For block typedefs, replace short block name with namespace-prefixed flat name
+            // so the canonical typedef uses the fully qualified name directly.
+            // No short-name alias is emitted — all references must use the flat name.
             if has_block_name {
                 let short_block_name = match &ad.data {
                     AstDeclData::Typedef { aliased_type, .. } => {
@@ -1769,13 +1829,20 @@ fn convert_decl(ad: &AstDecl, class_infos: &std::collections::BTreeMap<String, C
                     }
                     _ => None,
                 };
-                if let Some(ref short_name) = short_block_name {
-                    result.push(CgDecl {
-                        kind: CgDeclKind::Typedef, name: ad.name.clone().unwrap_or_default(),
-                        data: CgDeclData::Typedef { alias: flat_alias, type_str: short_name.clone(), struct_fields: vec![] },
-                    });
+                if let Some(ref sn) = short_block_name {
+                    if let Some(pos) = alias_type_str.find(sn.as_str()) {
+                        alias_type_str.replace_range(pos..pos + sn.len(), &flat_alias);
+                    }
+                    if let Ok(mut guard) = BLOCK_TYPEDEF_NAMES.get_or_init(|| Mutex::new(HashMap::new())).lock() {
+                        guard.insert(sn.clone(), flat_alias.clone());
+                    }
                 }
             }
+            let alias = if has_block_name { String::new() } else { flat_alias.clone() };
+            result.push(CgDecl {
+                kind: CgDeclKind::Typedef, name: ad.name.clone().unwrap_or_default(),
+                data: CgDeclData::Typedef { alias, type_str: alias_type_str.clone(), struct_fields },
+            });
         }
         AstDeclKind::Struct => {
             let fields = match &ad.data {
@@ -2138,6 +2205,27 @@ pub fn ast_to_cg_unit(ast: &AstUnit) -> CgUnit {
         }
     }
 
+    // Pre‑pass: collect block typedef short→flat name mappings so that ivar type
+    // resolution (which happens before Typedef conversion) can use flat names.
+    {
+        let mut flat_decls: Vec<&AstDecl> = Vec::new();
+        for d in &ast.decls { flatten_namespace_decls(d, &mut flat_decls); }
+        for d in flat_decls {
+            if d.kind == AstDeclKind::Typedef {
+                if let AstDeclData::Typedef { aliased_type, .. } = &d.data {
+                    if let Some(ref at) = aliased_type {
+                        if let Some(ref bn) = at.block_name {
+                            let flat = name_flat(d.name.as_deref().unwrap_or(""));
+                            if let Ok(mut guard) = BLOCK_TYPEDEF_NAMES.get_or_init(|| Mutex::new(HashMap::new())).lock() {
+                                guard.insert(bn.clone(), flat);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     // First pass: collect interface metadata (method signatures)
     use std::collections::BTreeMap;
     let mut class_infos: BTreeMap<String, ClassInfo> = BTreeMap::new();
@@ -2220,8 +2308,14 @@ pub fn ast_to_cg_unit(ast: &AstUnit) -> CgUnit {
 
             for iv in class_ivars {
                 if let AstDeclData::Ivar { ivar_type, .. } = &iv.data {
-                    let it = ivar_type.as_ref().map(|t| ast_type_to_c_str(t)).unwrap_or_else(|| "int".into());
+                    let mut it = ivar_type.as_ref().map(|t| ast_type_to_c_str(t)).unwrap_or_else(|| "int".into());
                     let in_ = iv.name.clone().unwrap_or_default();
+                    // Resolve block typedef short names to namespace-prefixed flat names
+                    if let Ok(guard) = BLOCK_TYPEDEF_NAMES.get_or_init(|| Mutex::new(HashMap::new())).lock() {
+                        if let Some(flat) = guard.get(&it) {
+                            it = flat.clone();
+                        }
+                    }
                     ivar_types.push(it);
                     ivar_names.push(in_);
                 }
@@ -3344,17 +3438,37 @@ pub fn emit_expr(e: &CgExpr, out: &mut String) {
             }
         }
         CgExprData::Binary { op_str, left, right } => {
-            out.push('(');
-            emit_expr(left, out);
-            out.push(' ');
-            out.push_str(op_str);
-            out.push(' ');
-            emit_expr(right, out);
-            out.push(')');
+            // Omit parens for == / != to avoid -Wparentheses-equality from
+            // double-wrapping when used inside if()/while().  All other binary
+            // ops need parens to guarantee correct nesting inside adjacent ops.
+            if op_str == "==" || op_str == "!=" {
+                emit_expr(left, out);
+                out.push(' ');
+                out.push_str(op_str);
+                out.push(' ');
+                emit_expr(right, out);
+            } else {
+                out.push('(');
+                emit_expr(left, out);
+                out.push(' ');
+                out.push_str(op_str);
+                out.push(' ');
+                emit_expr(right, out);
+                out.push(')');
+            }
         }
         CgExprData::Assign { target, value } => {
             emit_expr(target, out);
             out.push_str(" = ");
+            // Cast the value when target is a subclass pointer and value is a vtable call
+            if let Some(ttype) = &target.type_str {
+                if ttype.ends_with(" *") && ttype != "NPObject *" && matches!(value.data, CgExprData::Call { .. }) {
+                    let _ = write!(out, "({})(", ttype.trim_end());
+                    emit_expr(value, out);
+                    out.push(')');
+                    return;
+                }
+            }
             emit_expr(value, out);
         }
         CgExprData::Cast { target_type, expr } => {
@@ -3371,8 +3485,17 @@ pub fn emit_expr(e: &CgExpr, out: &mut String) {
                 let _ = write!(out, "(&nupa_{}_vtable_inst)->{}(", cls_flat, name);
                 if !args.is_empty() { emit_expr(&args[0], out); }
                 let _ = write!(out, ", {}", sel);
-                for arg in &args[1..] {
+                for (i, arg) in args[1..].iter().enumerate() {
                     out.push_str(", ");
+                    let param_idx = i + 2;
+                    if let Some(pt) = get_vtable_param_type(name, param_idx) {
+                        if pt.ends_with('*') && !pt.trim_start().starts_with("const char") && !pt.trim_start().starts_with("char ") {
+                            let _ = write!(out, "({})(", pt);
+                            emit_expr(arg, out);
+                            out.push_str(")");
+                            continue;
+                        }
+                    }
                     emit_expr(arg, out);
                 }
                 out.push(')');
@@ -3384,8 +3507,17 @@ pub fn emit_expr(e: &CgExpr, out: &mut String) {
                     if !args.is_empty() {
                         emit_expr(&args[0], out);
                         let _ = write!(out, ", {}", sel_const_name.as_deref().unwrap_or("0"));
-                        for arg in &args[1..] {
+                        for (i, arg) in args[1..].iter().enumerate() {
                             out.push_str(", ");
+                            let param_idx = i + 2;
+                            if let Some(pt) = get_vtable_param_type(name, param_idx) {
+                                if pt.ends_with('*') && !pt.trim_start().starts_with("const char") && !pt.trim_start().starts_with("char ") {
+                                    let _ = write!(out, "({})(", pt);
+                                    emit_expr(arg, out);
+                                    out.push_str(")");
+                                    continue;
+                                }
+                            }
                             emit_expr(arg, out);
                         }
                     }
@@ -3400,23 +3532,54 @@ pub fn emit_expr(e: &CgExpr, out: &mut String) {
                         let _ = write!(out, "((struct nupa_vtable *)(");
                         emit_expr(&args[0], out);
                         let _ = write!(out, "->isa->vtable))->{}(", name);
-                        emit_expr(&args[0], out);
+                        // Cast receiver to NPObject* for the function call
+                        let is_self = matches!(&args[0].data, CgExprData::Ident(s) if s == "self");
+                        if !is_self {
+                            out.push_str("(NPObject *)(");
+                            emit_expr(&args[0], out);
+                            out.push_str(")");
+                        } else {
+                            emit_expr(&args[0], out);
+                        }
                         let _ = write!(out, ", {}", sel);
-                        for arg in &args[1..] {
+                        for (i, arg) in args[1..].iter().enumerate() {
                             out.push_str(", ");
+                            // params: [NPObject* (0), SEL (1), user1 (2), user2 (3), ...]
+                            // args[1+] corresponds to params[2+]
+                            let param_idx = i + 2;
+                            if let Some(pt) = get_vtable_param_type(name, param_idx) {
+                                if pt.ends_with('*') && !pt.starts_with("const char") {
+                                    let _ = write!(out, "({})(", pt);
+                                    emit_expr(arg, out);
+                                    out.push_str(")");
+                                    continue;
+                                }
+                            }
                             emit_expr(arg, out);
                         }
                         out.push(')');
                     } else {
                         // Complex or empty receiver: temp variable
                         let tid = next_temp_id();
-                        let _ = write!(out, "({{ NPObject *__nupa_tmp_{} = (", tid);
-                        if !args.is_empty() { emit_expr(&args[0], out); } else { out.push_str("0"); }
+                        let _ = write!(out, "({{ NPObject *__nupa_tmp_{} = ((NPObject *)(", tid);
+                        if !args.is_empty() {
+                            emit_expr(&args[0], out);
+                            out.push_str(")");
+                        } else { out.push_str("0)"); }
                         let _ = write!(out, "); __nupa_tmp_{} ? ((struct nupa_vtable *)__nupa_tmp_{}->isa->vtable)->{}(", tid, tid, name);
                         let _ = write!(out, "__nupa_tmp_{}", tid);
                         let _ = write!(out, ", {}", sel);
-                        for arg in &args[1..] {
+                        for (i, arg) in args[1..].iter().enumerate() {
                             out.push_str(", ");
+                            let param_idx = i + 2;
+                            if let Some(pt) = get_vtable_param_type(name, param_idx) {
+                                if pt.ends_with('*') && !pt.trim_start().starts_with("const char") && !pt.trim_start().starts_with("char ") {
+                                    let _ = write!(out, "({})(", pt);
+                                    emit_expr(arg, out);
+                                    out.push_str(")");
+                                    continue;
+                                }
+                            }
                             emit_expr(arg, out);
                         }
                         out.push_str(") : 0; })");
@@ -3648,13 +3811,22 @@ pub fn emit_stmt(s: &CgStmt, out: &mut String, indent: usize) {
                             out.push(' ');
                             out.push_str(decl_var_name);
                             if let Some(suffix) = array_suffix { out.push_str(suffix); }
-                            // Uniform vtable member dispatch
-                            let _ = write!(out, " = ((struct nupa_vtable *)__nupa_tmp_{}->isa->vtable)->{}(", tid, method_name);
+                            // Uniform vtable member dispatch with (SubClass*) cast for concrete class pointers
+                            let needs_cast = decl_type.ends_with(" *") && decl_type != "NPObject *";
+                            if needs_cast {
+                                let _ = write!(out, " = ({})(", decl_type.trim_end());
+                            } else {
+                                out.push_str(" = ");
+                            }
+                            let _ = write!(out, "((struct nupa_vtable *)__nupa_tmp_{}->isa->vtable)->{}(", tid, method_name);
                             let _ = write!(out, "__nupa_tmp_{}", tid);
                         let _ = write!(out, ", {}", sel_const_name.as_deref().unwrap_or("0"));
                         for arg in &args[1..] {
                             out.push_str(", ");
                             emit_expr(arg, out);
+                        }
+                        if needs_cast {
+                            out.push_str(")");
                         }
                         out.push_str(");\n");
                     } else {
@@ -3700,8 +3872,31 @@ pub fn emit_stmt(s: &CgStmt, out: &mut String, indent: usize) {
                 }
                 if let Some(suffix) = array_suffix { out.push_str(suffix); }
                 if let Some(i) = init {
-                    out.push_str(" = ");
-                    emit_expr(i, out);
+                    // When init has type NPObject * but decl_type is a subclass pointer,
+                    // add an explicit cast to avoid -Wincompatible-pointer-types.
+                    let needs_cast = decl_type.ends_with(" *") && decl_type != "NPObject *"
+                        && !is_block_type
+                        && matches!(i.data, CgExprData::Call { .. });
+                    let needs_reverse_cast = decl_type == "NPObject *"
+                        && i.type_str.as_ref().map_or(false, |t| t.ends_with(" *") && t != "NPObject *");
+                    let needs_self_cast = decl_type.ends_with(" *") && decl_type != "NPObject *"
+                        && i.type_str.as_deref() == Some("NPObject *");
+                    if needs_cast {
+                        let _ = write!(out, " = ({})(", decl_type.trim_end());
+                        emit_expr(i, out);
+                        out.push_str(")");
+                    } else if needs_reverse_cast {
+                        let _ = write!(out, " = (NPObject *)(");
+                        emit_expr(i, out);
+                        out.push_str(")");
+                    } else if needs_self_cast {
+                        let _ = write!(out, " = ({})(", decl_type.trim_end());
+                        emit_expr(i, out);
+                        out.push_str(")");
+                    } else {
+                        out.push_str(" = ");
+                        emit_expr(i, out);
+                    }
                 }
                 for (n_name, n_init) in next {
                     out.push_str(", ");
@@ -3802,8 +3997,18 @@ pub fn emit_decl(d: &CgDecl, out: &mut String) {
                 out.push(' ');
                 out.push_str(&d.name);
                 if let Some(i) = init {
-                    out.push_str(" = ");
-                    emit_expr(i, out);
+                    // When init has type NPObject * but var_type is a subclass pointer,
+                    // add an explicit cast to avoid -Wincompatible-pointer-types.
+                    let needs_cast = var_type.ends_with(" *") && var_type != "NPObject *"
+                        && i.type_str.as_deref() == Some("NPObject *");
+                    if needs_cast {
+                        let _ = write!(out, " = ({})(", var_type);
+                        emit_expr(i, out);
+                        out.push_str(")");
+                    } else {
+                        out.push_str(" = ");
+                        emit_expr(i, out);
+                    }
                 }
                 for (n_name, n_init) in next {
                     out.push_str(", ");
@@ -3864,7 +4069,10 @@ pub fn emit_decl(d: &CgDecl, out: &mut String) {
 pub fn emit_unit_with_headers(unit: &CgUnit, c_headers: &[String], search_dirs: &[String]) -> String {
     let mut out = String::new();
     out.push_str("// Generated by nupac\n");
-    out.push_str("#include <string.h>\n");
+    let has_string_h = c_headers.iter().any(|h| h.contains("string.h"));
+    if !has_string_h {
+        out.push_str("#include <string.h>\n");
+    }
     for h in c_headers {
         out.push_str(h);
         out.push('\n');
@@ -3986,9 +4194,9 @@ pub fn emit_unit_with_headers(unit: &CgUnit, c_headers: &[String], search_dirs: 
     // occurrence emits a full typedef; subsequent same-signature blocks are
     // either skipped (if alias already exists) or emit only an alias line.
     let mut seen_block_sigs: std::collections::HashSet<String> = std::collections::HashSet::new();
-    for decl in &unit.decls {
-        if let CgDeclData::Typedef { ref alias, ref type_str, ref struct_fields } = decl.data {
-            if struct_fields.is_empty() {
+        for decl in &unit.decls {
+            if let CgDeclData::Typedef { ref alias, ref type_str, ref struct_fields } = decl.data {
+                if struct_fields.is_empty() {
                 // Block type dedup: skip full typedef if same signature seen
                 if type_str.contains("(^") {
                     let sig = block_type_signature_key(type_str);
@@ -3996,7 +4204,6 @@ pub fn emit_unit_with_headers(unit: &CgUnit, c_headers: &[String], search_dirs: 
                         continue;
                     }
                 }
-                // Skip self-referential alias (typedef Foo Foo;)
                 if *alias == *type_str {
                     continue;
                 }

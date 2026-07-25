@@ -5,164 +5,147 @@
 #include <stdint.h>
 #include <stddef.h>
 #include "nupa/runtime.h"
-
-
-#include <string.h>
-
-struct nupa_NPObject_vtable;
-struct nupa_Engine__Math__Vector2D_vtable;
-struct nupa_Engine__Graphics__RenderNode_vtable;
-struct nupa_Extension__SpriteNode_vtable;
-struct nupa_Gameplay__GameManager_vtable;
-
-#define nupa_NPObject_vtable_index_init 2
-#define nupa_NPObject_vtable_index_dealloc 3
-#define nupa_Engine__Math__Vector2D_vtable_index_initWithX_y_ 4
-#define nupa_Engine__Math__Vector2D_vtable_index_addVector_ 5
-#define nupa_Engine__Graphics__RenderNode_vtable_index_initWithName_ 4
-#define nupa_Engine__Graphics__RenderNode_vtable_index_renderFrame 5
-#define nupa_Engine__Graphics__RenderNode_vtable_index_dealloc 3
-#define nupa_Extension__SpriteNode_vtable_index_initWithName_textureId_ 6
-#define nupa_Extension__SpriteNode_vtable_index_setAnimationCallback_ 7
-#define nupa_Extension__SpriteNode_vtable_index_playAnimationFrames_ 8
-#define nupa_Extension__SpriteNode_vtable_index_renderFrame 5
-#define nupa_Gameplay__GameManager_vtable_index_registerNode_ 4
-#define nupa_Gameplay__GameManager_vtable_index_executeMainLoopIteration 5
-#define nupa_Gameplay__GameManager_vtable_index_init 2
+struct nupa_vtable;
+struct nupa_NPObject_meta_vtable;
+struct nupa_Gameplay__GameManager_meta_vtable;
+struct nupa_Engine__Graphics__RenderNode_meta_vtable;
+struct nupa_Engine__Math__Vector2D_meta_vtable;
+struct nupa_Extension__SpriteNode_meta_vtable;
 
 static const SEL __nupa_sel_init = {.name = "init", .hash = 0x16B1D373};
-static const SEL __nupa_sel_x = {.name = "x", .hash = 0xFD0C5087};
-static const SEL __nupa_sel_y = {.name = "y", .hash = 0xFC0C4EF4};
-static const SEL __nupa_sel_initWithX_y_ = {.name = "initWithX_y_", .hash = 0x2E79966A};
+static const SEL __nupa_sel_dealloc = {.name = "dealloc", .hash = 0xD9929EB3};
+static const SEL __nupa_sel_release = {.name = "release", .hash = 0x1036AE7E};
+static const SEL __nupa_sel_retain = {.name = "retain", .hash = 0x88BCC57C};
 static const SEL __nupa_sel_alloc = {.name = "alloc", .hash = 0xBAB1BB16};
-static const SEL __nupa_sel_initWithName_ = {.name = "initWithName_", .hash = 0xC90744AD};
+static const SEL __nupa_sel_new = {.name = "new", .hash = 0x28999611};
+static const SEL __nupa_sel_initWithX_y_ = {.name = "initWithX:y:", .hash = 0x2B77CF8E};
+static const SEL __nupa_sel_addVector_ = {.name = "addVector:", .hash = 0x749F928B};
+static const SEL __nupa_sel_initWithName_ = {.name = "initWithName:", .hash = 0xE4076F2E};
 static const SEL __nupa_sel_renderFrame = {.name = "renderFrame", .hash = 0xBD97780E};
-static const SEL __nupa_sel_initWithName_textureId_ = {.name = "initWithName_textureId_", .hash = 0xEA8B0E2A};
-static const SEL __nupa_sel_addVector_ = {.name = "addVector_", .hash = 0x979FC9A4};
+static const SEL __nupa_sel_nodeName = {.name = "nodeName", .hash = 0xD6DC2E2E};
 static const SEL __nupa_sel_position = {.name = "position", .hash = 0x934F4E0A};
-static const SEL __nupa_sel_registerNode_ = {.name = "registerNode_", .hash = 0xDD403FC9};
-static const SEL __nupa_sel_setAnimationCallback_ = {.name = "setAnimationCallback_", .hash = 0x57410341};
-static const SEL __nupa_sel_executeMainLoopIteration = {.name = "executeMainLoopIteration", .hash = 0x99B2197A};
-static const SEL __nupa_sel_playAnimationFrames_ = {.name = "playAnimationFrames_", .hash = 0xEABDB482};
+static const SEL __nupa_sel_setPosition_ = {.name = "setPosition_", .hash = 0x72E0787D};
+static const SEL __nupa_sel_initWithName_textureId_ = {.name = "initWithName:textureId:", .hash = 0xE9C85CBA};
+static const SEL __nupa_sel_setAnimationCallback_ = {.name = "setAnimationCallback:", .hash = 0x3A40D59A};
+static const SEL __nupa_sel_playAnimationFrames_ = {.name = "playAnimationFrames:", .hash = 0x07BDE229};
 static const SEL __nupa_sel_textureId = {.name = "textureId", .hash = 0xDA939859};
+static const SEL __nupa_sel_setTextureId_ = {.name = "setTextureId_", .hash = 0x4B4521A0};
+static const SEL __nupa_sel_registerNode_ = {.name = "registerNode:", .hash = 0x004076E2};
+static const SEL __nupa_sel_executeMainLoopIteration = {.name = "executeMainLoopIteration", .hash = 0x99B2197A};
 
+#ifndef __NUPA_ROOT_DEFINED
+#define __NUPA_ROOT_DEFINED
+struct __nupa_root {
+    struct NPClass *isa;
+    uint32_t retain_count;
+};
+typedef struct __nupa_root __nupa_root;
+#endif
+#ifndef NPOBJECT_DEFINED
+#define NPOBJECT_DEFINED
+struct NPObject {
+    struct NPClass *isa;
+    uint32_t retain_count;
+};
 typedef struct NPObject NPObject;
-typedef struct Engine__Math__Vector2D Engine__Math__Vector2D;
-typedef struct Engine__Graphics__RenderNode Engine__Graphics__RenderNode;
-typedef struct Extension__SpriteNode Extension__SpriteNode;
+#endif
+struct Gameplay__GameManager;
 typedef struct Gameplay__GameManager Gameplay__GameManager;
+struct Engine__Graphics__RenderNode;
+typedef struct Engine__Graphics__RenderNode Engine__Graphics__RenderNode;
+struct Engine__Math__Vector2D;
+typedef struct Engine__Math__Vector2D Engine__Math__Vector2D;
+struct Extension__SpriteNode;
+typedef struct Extension__SpriteNode Extension__SpriteNode;
 
+typedef void (^Extension__ActionCompleteBlock)(int, Engine__Math__Vector2D *) ;
 
-typedef void (^ActionCompleteBlock)(int,Engine__Math__Vector2D *);
-
+NPObject * __nupa_root_init(NPObject * self, SEL _cmd);
+void __nupa_root_dealloc(NPObject * self, SEL _cmd);
+void __nupa_root_release(NPObject * self, SEL _cmd);
+NPObject * __nupa_root_retain(NPObject * self, SEL _cmd);
 NPObject * NPObject_alloc(NPClass * self, SEL _cmd);
 NPObject * NPObject_new(NPClass * self, SEL _cmd);
 NPObject * NPObject_init(NPObject * self, SEL _cmd);
 void NPObject_dealloc(NPObject * self, SEL _cmd);
-NPClass * NPObject_getClass(NPClass * self, SEL _cmd);
+void NPObject_release(NPObject * self, SEL _cmd);
+NPObject * NPObject_retain(NPObject * self, SEL _cmd);
 NPObject * Engine__Math__Vector2D_initWithX_y_(NPObject * self, SEL _cmd, int posX, int posY);
-void Engine__Math__Vector2D_addVector_(NPObject * self, SEL _cmd, Vector2D * other);
-NPClass * Engine__Math__Vector2D_getClass(NPClass * self, SEL _cmd);
+void Engine__Math__Vector2D_addVector_(NPObject * self, SEL _cmd, Engine__Math__Vector2D * other);
 NPObject * Engine__Graphics__RenderNode_initWithName_(NPObject * self, SEL _cmd, const char * name);
 void Engine__Graphics__RenderNode_renderFrame(NPObject * self, SEL _cmd);
-void Engine__Graphics__RenderNode_dealloc(NPObject * self, SEL _cmd);
 const char * Engine__Graphics__RenderNode_nodeName(NPObject * self, SEL _cmd);
 Engine__Math__Vector2D * Engine__Graphics__RenderNode_position(NPObject * self, SEL _cmd);
 void Engine__Graphics__RenderNode_setPosition_(NPObject * self, SEL _cmd, Engine__Math__Vector2D * value);
-NPClass * Engine__Graphics__RenderNode_getClass(NPClass * self, SEL _cmd);
+void Engine__Graphics__RenderNode_dealloc(NPObject * self, SEL _cmd);
 NPObject * Extension__SpriteNode_initWithName_textureId_(NPObject * self, SEL _cmd, const char * name, int tId);
-void Extension__SpriteNode_setAnimationCallback_(NPObject * self, SEL _cmd, ActionCompleteBlock cb);
+void Extension__SpriteNode_setAnimationCallback_(NPObject * self, SEL _cmd, Extension__ActionCompleteBlock cb);
 void Extension__SpriteNode_playAnimationFrames_(NPObject * self, SEL _cmd, int total);
 void Extension__SpriteNode_renderFrame(NPObject * self, SEL _cmd);
 int Extension__SpriteNode_textureId(NPObject * self, SEL _cmd);
 void Extension__SpriteNode_setTextureId_(NPObject * self, SEL _cmd, int value);
-NPClass * Extension__SpriteNode_getClass(NPClass * self, SEL _cmd);
 void Gameplay__GameManager_registerNode_(NPObject * self, SEL _cmd, Engine__Graphics__RenderNode * node);
 void Gameplay__GameManager_executeMainLoopIteration(NPObject * self, SEL _cmd);
 NPObject * Gameplay__GameManager_init(NPObject * self, SEL _cmd);
+NPObject * nupa_alloc(struct NPClass * cls);
+NPObject * nupa_init(NPObject * self);
+void nupa_release(NPObject * obj);
+NPObject * nupa_retain(NPObject * obj);
+int main(int argc, const char * argv[]);
+
+NPClass * NPObject_getClass(NPClass * self, SEL _cmd);
 NPClass * Gameplay__GameManager_getClass(NPClass * self, SEL _cmd);
-int main(int argc, const char * * argv);
+NPClass * Engine__Graphics__RenderNode_getClass(NPClass * self, SEL _cmd);
+NPClass * Engine__Math__Vector2D_getClass(NPClass * self, SEL _cmd);
+NPClass * Extension__SpriteNode_getClass(NPClass * self, SEL _cmd);
 
-extern NPClass nupa_NPObject_class;
-extern NPClass nupa_Engine__Math__Vector2D_class;
-extern NPClass nupa_Engine__Graphics__RenderNode_class;
-extern NPClass nupa_Extension__SpriteNode_class;
-extern NPClass nupa_Gameplay__GameManager_class;
-void nupa_meta_init(void);
-
-// struct NPClass defined in runtime.h
-// struct NPObject defined in runtime.h
-struct nupa_NPObject_vtable {
-    NPObject * (*init)(NPObject *, SEL);
+struct nupa_vtable {
+    void (*addVector_)(NPObject *, SEL, Engine__Math__Vector2D *);
     void (*dealloc)(NPObject *, SEL);
+    void (*executeMainLoopIteration)(NPObject *, SEL);
+    NPObject * (*init)(NPObject *, SEL);
+    NPObject * (*initWithName_)(NPObject *, SEL, const char *);
+    NPObject * (*initWithName_textureId_)(NPObject *, SEL, const char *, int);
+    NPObject * (*initWithX_y_)(NPObject *, SEL, int, int);
+    const char * (*nodeName)(NPObject *, SEL);
+    void (*playAnimationFrames_)(NPObject *, SEL, int);
+    Engine__Math__Vector2D * (*position)(NPObject *, SEL);
+    void (*registerNode_)(NPObject *, SEL, Engine__Graphics__RenderNode *);
+    void (*release)(NPObject *, SEL);
+    void (*renderFrame)(NPObject *, SEL);
+    NPObject * (*retain)(NPObject *, SEL);
+    void (*setAnimationCallback_)(NPObject *, SEL, Extension__ActionCompleteBlock);
+    void (*setPosition_)(NPObject *, SEL, Engine__Math__Vector2D *);
+    void (*setTextureId_)(NPObject *, SEL, int);
+    int (*textureId)(NPObject *, SEL);
 };
+
 struct nupa_NPObject_meta_vtable {
     NPObject * (*alloc)(NPClass *, SEL);
     NPObject * (*new)(NPClass *, SEL);
     NPClass * (*class)(NPClass *, SEL);
 };
-struct Engine__Math__Vector2D {
-    struct NPClass *isa;
-    uint32_t retain_count;
-    int x;
-    int y;
-};
-typedef struct Engine__Math__Vector2D Engine__Math__Vector2D;
-struct nupa_Engine__Math__Vector2D_vtable {
-    NPObject * (*init)(NPObject *, SEL);
-    void (*dealloc)(NPObject *, SEL);
-    NPObject * (*initWithX_y_)(NPObject *, SEL, int, int);
-    void (*addVector_)(NPObject *, SEL, Vector2D *);
-};
-struct nupa_Engine__Math__Vector2D_meta_vtable {
+struct nupa_Gameplay__GameManager_meta_vtable {
+    NPObject * (*alloc)(NPClass *, SEL);
+    NPObject * (*new)(NPClass *, SEL);
     NPClass * (*class)(NPClass *, SEL);
-};
-struct Engine__Graphics__RenderNode {
-    struct NPClass *isa;
-    uint32_t retain_count;
-    const char * _nodeName;
-    Engine__Math__Vector2D * _position;
-};
-typedef struct Engine__Graphics__RenderNode Engine__Graphics__RenderNode;
-struct nupa_Engine__Graphics__RenderNode_vtable {
-    NPObject * (*init)(NPObject *, SEL);
-    void (*dealloc)(NPObject *, SEL);
-    NPObject * (*initWithName_)(NPObject *, SEL, const char *);
-    void (*renderFrame)(NPObject *, SEL);
-    const char * (*nodeName)(NPObject *, SEL);
-    Engine__Math__Vector2D * (*position)(NPObject *, SEL);
-    void (*setPosition_)(NPObject *, SEL, Engine__Math__Vector2D *);
 };
 struct nupa_Engine__Graphics__RenderNode_meta_vtable {
+    NPObject * (*alloc)(NPClass *, SEL);
+    NPObject * (*new)(NPClass *, SEL);
     NPClass * (*class)(NPClass *, SEL);
 };
-typedef void (^ActionCompleteBlock)(int,Engine__Math__Vector2D *);
-struct Extension__SpriteNode {
-    struct NPClass *isa;
-    uint32_t retain_count;
-    const char * _nodeName;
-    Engine__Math__Vector2D * _position;
-    int _textureId;
-    ActionCompleteBlock _animationCallback;
-};
-typedef struct Extension__SpriteNode Extension__SpriteNode;
-struct nupa_Extension__SpriteNode_vtable {
-    NPObject * (*init)(NPObject *, SEL);
-    void (*dealloc)(NPObject *, SEL);
-    NPObject * (*initWithName_)(NPObject *, SEL, const char *);
-    void (*renderFrame)(NPObject *, SEL);
-    const char * (*nodeName)(NPObject *, SEL);
-    Engine__Math__Vector2D * (*position)(NPObject *, SEL);
-    void (*setPosition_)(NPObject *, SEL, Engine__Math__Vector2D *);
-    NPObject * (*initWithName_textureId_)(NPObject *, SEL, const char *, int);
-    void (*setAnimationCallback_)(NPObject *, SEL, ActionCompleteBlock);
-    void (*playAnimationFrames_)(NPObject *, SEL, int);
-    int (*textureId)(NPObject *, SEL);
-    void (*setTextureId_)(NPObject *, SEL, int);
+struct nupa_Engine__Math__Vector2D_meta_vtable {
+    NPObject * (*alloc)(NPClass *, SEL);
+    NPObject * (*new)(NPClass *, SEL);
+    NPClass * (*class)(NPClass *, SEL);
 };
 struct nupa_Extension__SpriteNode_meta_vtable {
+    NPObject * (*alloc)(NPClass *, SEL);
+    NPObject * (*new)(NPClass *, SEL);
     NPClass * (*class)(NPClass *, SEL);
 };
+
 struct Gameplay__GameManager {
     struct NPClass *isa;
     uint32_t retain_count;
@@ -170,319 +153,165 @@ struct Gameplay__GameManager {
     int _nodeCount;
 };
 typedef struct Gameplay__GameManager Gameplay__GameManager;
-struct nupa_Gameplay__GameManager_vtable {
-    NPObject * (*init)(NPObject *, SEL);
-    void (*dealloc)(NPObject *, SEL);
-    void (*registerNode_)(NPObject *, SEL, Engine__Graphics__RenderNode *);
-    void (*executeMainLoopIteration)(NPObject *, SEL);
+
+struct Engine__Graphics__RenderNode {
+    struct NPClass *isa;
+    uint32_t retain_count;
+    const char * _nodeName;
+    Engine__Math__Vector2D * _position;
 };
-struct nupa_Gameplay__GameManager_meta_vtable {
-    NPClass * (*class)(NPClass *, SEL);
+typedef struct Engine__Graphics__RenderNode Engine__Graphics__RenderNode;
+
+struct Engine__Math__Vector2D {
+    struct NPClass *isa;
+    uint32_t retain_count;
+    int x;
+    int y;
 };
-NPObject * NPObject_alloc(NPClass * self, SEL _cmd) {
-    return nupa_alloc(self);
-}
+typedef struct Engine__Math__Vector2D Engine__Math__Vector2D;
 
-NPObject * NPObject_new(NPClass * self, SEL _cmd) {
-    NPObject * obj = nupa_alloc(self);
-    return nupa_init(obj);
-}
+struct Extension__SpriteNode {
+    struct NPClass *isa;
+    uint32_t retain_count;
+    const char * _nodeName;
+    Engine__Math__Vector2D * _position;
+    int _textureId;
+    Extension__ActionCompleteBlock _animationCallback;
+};
+typedef struct Extension__SpriteNode Extension__SpriteNode;
 
-NPObject * NPObject_init(NPObject * self, SEL _cmd) {
-    struct NPObject * _self = ((struct NPObject *)(self));
-    {
-        return nupa_init(self);
-    }
-}
+extern NPClass nupa___nupa_root_class;
+extern NPClass nupa_NPObject_class;
+extern NPClass nupa_Gameplay__GameManager_class;
+extern NPClass nupa_Engine__Graphics__RenderNode_class;
+extern NPClass nupa_Engine__Math__Vector2D_class;
+extern NPClass nupa_Extension__SpriteNode_class;
+void nupa_meta_init(void);
 
-void NPObject_dealloc(NPObject * self, SEL _cmd) {
-    struct NPObject * _self = ((struct NPObject *)(self));
-    {
-        return;
-    }
-}
-
-NPClass * NPObject_getClass(NPClass * self, SEL _cmd) {
-    return &nupa_NPObject_class;
-}
-
-NPObject * nupa_alloc(struct NPClass * cls);
-NPObject * nupa_init(NPObject * );
-NPObject * Engine__Math__Vector2D_initWithX_y_(NPObject * self, SEL _cmd, int posX, int posY) {
-    struct Engine__Math__Vector2D * _self = ((struct Engine__Math__Vector2D *)(self));
-    {
-        self = NPObject_init(self, __nupa_sel_init);
-        if (self) {
-            {
-                ((struct Engine__Math__Vector2D *)(self))->x = posX;
-                ((struct Engine__Math__Vector2D *)(self))->y = posY;
-            }
-        }
-        return self;
-    }
-}
-
-void Engine__Math__Vector2D_addVector_(NPObject * self, SEL _cmd, Vector2D * other) {
-    struct Engine__Math__Vector2D * _self = ((struct Engine__Math__Vector2D *)(self));
-    {
-        if (other) {
-            {
-                ((struct Engine__Math__Vector2D *)(self))->x = ((struct Engine__Math__Vector2D *)(self))->x + ((struct nupa_NPObject_vtable *)other->isa->vtable)->x(other, __nupa_sel_x);
-                ((struct Engine__Math__Vector2D *)(self))->y = ((struct Engine__Math__Vector2D *)(self))->y + ((struct nupa_NPObject_vtable *)other->isa->vtable)->y(other, __nupa_sel_y);
-            }
-        }
-    }
-}
-
-NPClass * Engine__Math__Vector2D_getClass(NPClass * self, SEL _cmd) {
-    return &nupa_Engine__Math__Vector2D_class;
-}
-
-NPObject * Engine__Graphics__RenderNode_initWithName_(NPObject * self, SEL _cmd, const char * name) {
-    struct Engine__Graphics__RenderNode * _self = ((struct Engine__Graphics__RenderNode *)(self));
-    {
-        self = NPObject_init(self, __nupa_sel_init);
-        if (self) {
-            {
-                ((struct Engine__Graphics__RenderNode *)(self))->_nodeName = name;
-                ((struct Engine__Graphics__RenderNode *)(self))->_position = ({ NPObject *__nupa_tmp_0 = (NPObject_alloc(&nupa_Engine__Math__Vector2D_class, __nupa_sel_alloc)); ((struct nupa_Engine__Math__Vector2D_vtable *)__nupa_tmp_0->isa->vtable)->initWithX_y_(__nupa_tmp_0, __nupa_sel_initWithX_y_, 0, 0); });
-            }
-        }
-        return self;
-    }
-}
-
-void Engine__Graphics__RenderNode_renderFrame(NPObject * self, SEL _cmd) {
-    struct Engine__Graphics__RenderNode * _self = ((struct Engine__Graphics__RenderNode *)(self));
-    {
-        printf("[基类节点] 正在执行通用绘制 -> 节点名: %s | 坐标: (%d, %d)\n", ((struct Engine__Graphics__RenderNode *)(self))->_nodeName, ((struct Engine__Math__Vector2D *)(((struct Engine__Graphics__RenderNode *)(self))->_position))->x, ((struct Engine__Math__Vector2D *)(((struct Engine__Graphics__RenderNode *)(self))->_position))->y);
-    }
-}
-
-void Engine__Graphics__RenderNode_dealloc(NPObject * self, SEL _cmd) {
-    struct Engine__Graphics__RenderNode * _self = ((struct Engine__Graphics__RenderNode *)(self));
-    {
-        nupa_release(((struct Engine__Graphics__RenderNode *)(self))->_position);
-        np_object_dealloc(self);
-    }
-}
-
-const char * Engine__Graphics__RenderNode_nodeName(NPObject * self, SEL _cmd) {
-    return ((struct Engine::Graphics::RenderNode *)(self))->_nodeName;
-}
-
-Engine__Math__Vector2D * Engine__Graphics__RenderNode_position(NPObject * self, SEL _cmd) {
-    return ((struct Engine::Graphics::RenderNode *)(self))->_position;
-}
-
-void Engine__Graphics__RenderNode_setPosition_(NPObject * self, SEL _cmd, Engine__Math__Vector2D * value) {
-    ((struct Engine__Graphics__RenderNode *)(self))->_position = value;
-}
-
-NPClass * Engine__Graphics__RenderNode_getClass(NPClass * self, SEL _cmd) {
-    return &nupa_Engine__Graphics__RenderNode_class;
-}
-
-NPObject * Extension__SpriteNode_initWithName_textureId_(NPObject * self, SEL _cmd, const char * name, int tId) {
-    struct Extension__SpriteNode * _self = ((struct Extension__SpriteNode *)(self));
-    {
-        self = Engine__Graphics__RenderNode_initWithName_(self, __nupa_sel_initWithName_, name);
-        if (self) {
-            {
-                ((struct Extension__SpriteNode *)(self))->_textureId = tId;
-                ((struct Extension__SpriteNode *)(self))->_animationCallback = NULL;
-            }
-        }
-        return self;
-    }
-}
-
-void Extension__SpriteNode_setAnimationCallback_(NPObject * self, SEL _cmd, ActionCompleteBlock cb) {
-    struct Extension__SpriteNode * _self = ((struct Extension__SpriteNode *)(self));
-    {
-        ((struct Extension__SpriteNode *)(self))->_animationCallback = cb;
-    }
-}
-
-void Extension__SpriteNode_playAnimationFrames_(NPObject * self, SEL _cmd, int total) {
-    struct Extension__SpriteNode * _self = ((struct Extension__SpriteNode *)(self));
-    {
-        printf("[精灵动画] 开始播放帧序列，预计播放 %d 帧...\n", total);
-        if (((struct Extension__SpriteNode *)(self))->_animationCallback) {
-            {
-                ((struct Engine__Math__Vector2D *)(((struct Extension__SpriteNode *)(self))->_position))->x = ((struct Engine__Math__Vector2D *)(((struct Extension__SpriteNode *)(self))->_position))->x + total * 2;
-                ((struct Engine__Math__Vector2D *)(((struct Extension__SpriteNode *)(self))->_position))->y = ((struct Engine__Math__Vector2D *)(((struct Extension__SpriteNode *)(self))->_position))->y + total * 3;
-                ((struct Extension__SpriteNode *)(self))->_animationCallback(total, ((struct Extension__SpriteNode *)(self))->_position);
-            }
-        }
-    }
-}
-
-void Extension__SpriteNode_renderFrame(NPObject * self, SEL _cmd) {
-    struct Extension__SpriteNode * _self = ((struct Extension__SpriteNode *)(self));
-    {
-        printf("[子类精灵] [VTable 多态] 渲染贴图 -> 资源ID: %d | 节点名: %s | 坐标: (%d, %d)\n", ((struct Extension__SpriteNode *)(self))->_textureId, ((struct Extension__SpriteNode *)(self))->_nodeName, ((struct Engine__Math__Vector2D *)(((struct Extension__SpriteNode *)(self))->_position))->x, ((struct Engine__Math__Vector2D *)(((struct Extension__SpriteNode *)(self))->_position))->y);
-    }
-}
-
-int Extension__SpriteNode_textureId(NPObject * self, SEL _cmd) {
-    return ((struct Extension::SpriteNode *)(self))->_textureId;
-}
-
-void Extension__SpriteNode_setTextureId_(NPObject * self, SEL _cmd, int value) {
-    ((struct Extension__SpriteNode *)(self))->_textureId = value;
-}
-
-NPClass * Extension__SpriteNode_getClass(NPClass * self, SEL _cmd) {
-    return &nupa_Extension__SpriteNode_class;
-}
-
-void Gameplay__GameManager_registerNode_(NPObject * self, SEL _cmd, Engine__Graphics__RenderNode * node) {
-    struct Gameplay__GameManager * _self = ((struct Gameplay__GameManager *)(self));
-    {
-        if (((struct Gameplay__GameManager *)(self))->_nodeCount < 3) {
-            {
-                ((struct Gameplay__GameManager *)(self))->_activeNodes[((struct Gameplay__GameManager *)(self))->_nodeCount] = node;
-                ((struct Gameplay__GameManager *)(self))->_nodeCount++;
-            }
-        }
-    }
-}
-
-void Gameplay__GameManager_executeMainLoopIteration(NPObject * self, SEL _cmd) {
-    struct Gameplay__GameManager * _self = ((struct Gameplay__GameManager *)(self));
-    {
-        printf("[GameManager] ---- 启动这一帧的逻辑与渲染管线 ----\n");
-        for (int i = 0; i < ((struct Gameplay__GameManager *)(self))->_nodeCount; i++) {
-            {
-                ({ NPObject *__nupa_tmp_1 = (((struct Gameplay__GameManager *)(self))->_activeNodes[i]); ((struct nupa_Engine__Graphics__RenderNode_vtable *)__nupa_tmp_1->isa->vtable)->renderFrame(__nupa_tmp_1, __nupa_sel_renderFrame); });
-            }
-        }
-    }
-}
-
-NPObject * Gameplay__GameManager_init(NPObject * self, SEL _cmd) {
-    struct Gameplay__GameManager * _self = ((struct Gameplay__GameManager *)(self));
-    {
-        self = NPObject_init(self, __nupa_sel_init);
-        if (self) {
-            {
-                ((struct Gameplay__GameManager *)(self))->_nodeCount = 0;
-            }
-        }
-        return self;
-    }
-}
-
-NPClass * Gameplay__GameManager_getClass(NPClass * self, SEL _cmd) {
-    return &nupa_Gameplay__GameManager_class;
-}
-
-int main(int argc, const char * * argv) {
-    nupa_autoreleasepool_t *__pool = nupa_autoreleasepool_push();
-    nupa_meta_init();
-    {
-        nupa_autoreleasepool_t * __pool = nupa_autoreleasepool_push();
-        {
-            printf("=========================================================\n");
-            printf(">>>    nupac 编译器「方括号内 :: 全称消息传递」集成压测   <<<\n");
-            printf("=========================================================\n\n");
-            NPObject *__nupa_tmp_2 = (NPObject_alloc(&nupa_Gameplay__GameManager_class, __nupa_sel_alloc));
-            Gameplay__GameManager * manager = ((struct nupa_Gameplay__GameManager_vtable *)__nupa_tmp_2->isa->vtable)->init(__nupa_tmp_2, __nupa_sel_init);
-            NPObject *__nupa_tmp_3 = (NPObject_alloc(&nupa_Engine__Graphics__RenderNode_class, __nupa_sel_alloc));
-            Engine__Graphics__RenderNode * bgNode = ((struct nupa_Engine__Graphics__RenderNode_vtable *)__nupa_tmp_3->isa->vtable)->initWithName_(__nupa_tmp_3, __nupa_sel_initWithName_, "Background_Layer");
-            NPObject *__nupa_tmp_4 = (NPObject_alloc(&nupa_Extension__SpriteNode_class, __nupa_sel_alloc));
-            Extension__SpriteNode * heroSprite = ((struct nupa_Extension__SpriteNode_vtable *)__nupa_tmp_4->isa->vtable)->initWithName_textureId_(__nupa_tmp_4, __nupa_sel_initWithName_textureId_, "Hero_Character", 9001);
-            NPObject *__nupa_tmp_5 = (NPObject_alloc(&nupa_Extension__SpriteNode_class, __nupa_sel_alloc));
-            Extension__SpriteNode * enemySprite = ((struct nupa_Extension__SpriteNode_vtable *)__nupa_tmp_5->isa->vtable)->initWithName_textureId_(__nupa_tmp_5, __nupa_sel_initWithName_textureId_, "Boss_Dragon", 9999);
-            NPObject *__nupa_tmp_6 = (NPObject_alloc(&nupa_Engine__Math__Vector2D_class, __nupa_sel_alloc));
-            Engine__Math__Vector2D * offset1 = ((struct nupa_Engine__Math__Vector2D_vtable *)__nupa_tmp_6->isa->vtable)->initWithX_y_(__nupa_tmp_6, __nupa_sel_initWithX_y_, 100, 150);
-            NPObject *__nupa_tmp_7 = (NPObject_alloc(&nupa_Engine__Math__Vector2D_class, __nupa_sel_alloc));
-            Engine__Math__Vector2D * offset2 = ((struct nupa_Engine__Math__Vector2D_vtable *)__nupa_tmp_7->isa->vtable)->initWithX_y_(__nupa_tmp_7, __nupa_sel_initWithX_y_, 500, 800);
-            ({ NPObject *__nupa_tmp_8 = (((struct nupa_Engine__Graphics__RenderNode_vtable *)bgNode->isa->vtable)->position(bgNode, __nupa_sel_position)); ((struct nupa_Engine__Math__Vector2D_vtable *)__nupa_tmp_8->isa->vtable)->addVector_(__nupa_tmp_8, __nupa_sel_addVector_, offset1); });
-            ({ NPObject *__nupa_tmp_9 = (((struct nupa_Engine__Graphics__RenderNode_vtable *)heroSprite->isa->vtable)->position(heroSprite, __nupa_sel_position)); ((struct nupa_Engine__Math__Vector2D_vtable *)__nupa_tmp_9->isa->vtable)->addVector_(__nupa_tmp_9, __nupa_sel_addVector_, offset2); });
-            ((struct nupa_Gameplay__GameManager_vtable *)manager->isa->vtable)->registerNode_(manager, __nupa_sel_registerNode_, bgNode);
-            ((struct nupa_Gameplay__GameManager_vtable *)manager->isa->vtable)->registerNode_(manager, __nupa_sel_registerNode_, heroSprite);
-            ((struct nupa_Gameplay__GameManager_vtable *)manager->isa->vtable)->registerNode_(manager, __nupa_sel_registerNode_, enemySprite);
-            void (^onHeroActionFinished)(int frames, Engine::Math::Vector2D * finalPos) = ^void(int frames, Engine::Math::Vector2D * finalPos) {
-    printf("[全局事件中心] 捕获到精灵动作结束信号！\n");
-    printf("       -> 播放帧数: %d\n", frames);
-    printf("       -> 精灵最终落点物理坐标: (%d, %d)\n", ((struct Engine__Math__Vector2D *)(finalPos))->x, ((struct Engine__Math__Vector2D *)(finalPos))->y);
-}
-;
-            ((struct nupa_Extension__SpriteNode_vtable *)heroSprite->isa->vtable)->setAnimationCallback_(heroSprite, __nupa_sel_setAnimationCallback_, onHeroActionFinished);
-            ((struct nupa_Gameplay__GameManager_vtable *)manager->isa->vtable)->executeMainLoopIteration(manager, __nupa_sel_executeMainLoopIteration);
-            printf("\n>>> 模拟游戏内幕：主角释放大招，触发关键帧动画...\n");
-            ((struct nupa_Extension__SpriteNode_vtable *)heroSprite->isa->vtable)->playAnimationFrames_(heroSprite, __nupa_sel_playAnimationFrames_, 24);
-            printf("\n");
-            ((struct nupa_Gameplay__GameManager_vtable *)manager->isa->vtable)->executeMainLoopIteration(manager, __nupa_sel_executeMainLoopIteration);
-            printf("\n--- 压测恶心复合语法边界（方括号内全称表达式） ---\n");
-            int syntaxControl = 1;
-            int secondarySideEffect = 100;
-            int evaluatedTexture = syntaxControl > 0 ? ({ NPObject *__nupa_tmp_10 = (secondarySideEffect++, enemySprite); ((struct nupa_Extension__SpriteNode_vtable *)__nupa_tmp_10->isa->vtable)->textureId(__nupa_tmp_10, __nupa_sel_textureId); }) : 0;
-            printf("[复合断言] 边界切分完美！副作用计数: %d | 抓取Boss纹理ID: %d\n", secondarySideEffect, evaluatedTexture);
-            printf("\n--- 正在启动对象拓扑树资源安全销毁... ---\n");
-            nupa_release(offset1);
-            nupa_release(offset2);
-            nupa_release(bgNode);
-            nupa_release(heroSprite);
-            nupa_release(enemySprite);
-            nupa_release(manager);
-            printf("\n=========================================================\n");
-            printf(">>>    太强了！方括号内直接解析「::」全称消息传递成功！   <<<\n");
-            printf("=========================================================\n");
-        }
-        nupa_autoreleasepool_pop(__pool);
-    }
-    return 0;
-    nupa_autoreleasepool_pop(__pool);
-}
-
-
-// ─── Class metadata ─────────────────────────────────────
-
-struct nupa_NPObject_vtable nupa_NPObject_vtable_inst = {
-    .init = NPObject_init,
-    .dealloc = NPObject_dealloc,
+struct nupa_vtable nupa___nupa_root_vtable_inst = {
+    .addVector_ = NULL,
+    .dealloc = (void (*)(NPObject *, SEL))__nupa_root_dealloc,
+    .executeMainLoopIteration = NULL,
+    .init = (NPObject * (*)(NPObject *, SEL))__nupa_root_init,
+    .initWithName_ = NULL,
+    .initWithName_textureId_ = NULL,
+    .initWithX_y_ = NULL,
+    .nodeName = NULL,
+    .playAnimationFrames_ = NULL,
+    .position = NULL,
+    .registerNode_ = NULL,
+    .release = (void (*)(NPObject *, SEL))__nupa_root_release,
+    .renderFrame = NULL,
+    .retain = (NPObject * (*)(NPObject *, SEL))__nupa_root_retain,
+    .setAnimationCallback_ = NULL,
+    .setPosition_ = NULL,
+    .setTextureId_ = NULL,
+    .textureId = NULL,
 };
 
-struct nupa_Engine__Math__Vector2D_vtable nupa_Engine__Math__Vector2D_vtable_inst = {
-    .init = NPObject_init,
-    .dealloc = NPObject_dealloc,
-    .initWithX_y_ = Engine__Math__Vector2D_initWithX_y_,
-    .addVector_ = Engine__Math__Vector2D_addVector_,
+struct nupa_vtable nupa_NPObject_vtable_inst = {
+    .addVector_ = NULL,
+    .dealloc = (void (*)(NPObject *, SEL))NPObject_dealloc,
+    .executeMainLoopIteration = NULL,
+    .init = (NPObject * (*)(NPObject *, SEL))NPObject_init,
+    .initWithName_ = NULL,
+    .initWithName_textureId_ = NULL,
+    .initWithX_y_ = NULL,
+    .nodeName = NULL,
+    .playAnimationFrames_ = NULL,
+    .position = NULL,
+    .registerNode_ = NULL,
+    .release = (void (*)(NPObject *, SEL))NPObject_release,
+    .renderFrame = NULL,
+    .retain = (NPObject * (*)(NPObject *, SEL))NPObject_retain,
+    .setAnimationCallback_ = NULL,
+    .setPosition_ = NULL,
+    .setTextureId_ = NULL,
+    .textureId = NULL,
 };
 
-struct nupa_Engine__Graphics__RenderNode_vtable nupa_Engine__Graphics__RenderNode_vtable_inst = {
-    .init = NPObject_init,
-    .dealloc = Engine__Graphics__RenderNode_dealloc,
-    .initWithName_ = Engine__Graphics__RenderNode_initWithName_,
-    .renderFrame = Engine__Graphics__RenderNode_renderFrame,
-    .nodeName = Engine__Graphics__RenderNode_nodeName,
-    .position = Engine__Graphics__RenderNode_position,
-    .setPosition_ = Engine__Graphics__RenderNode_setPosition_,
+struct nupa_vtable nupa_Gameplay__GameManager_vtable_inst = {
+    .addVector_ = NULL,
+    .dealloc = (void (*)(NPObject *, SEL))NPObject_dealloc,
+    .executeMainLoopIteration = (void (*)(NPObject *, SEL))Gameplay__GameManager_executeMainLoopIteration,
+    .init = (NPObject * (*)(NPObject *, SEL))Gameplay__GameManager_init,
+    .initWithName_ = NULL,
+    .initWithName_textureId_ = NULL,
+    .initWithX_y_ = NULL,
+    .nodeName = NULL,
+    .playAnimationFrames_ = NULL,
+    .position = NULL,
+    .registerNode_ = (void (*)(NPObject *, SEL, Engine__Graphics__RenderNode *))Gameplay__GameManager_registerNode_,
+    .release = (void (*)(NPObject *, SEL))NPObject_release,
+    .renderFrame = NULL,
+    .retain = (NPObject * (*)(NPObject *, SEL))NPObject_retain,
+    .setAnimationCallback_ = NULL,
+    .setPosition_ = NULL,
+    .setTextureId_ = NULL,
+    .textureId = NULL,
 };
 
-struct nupa_Extension__SpriteNode_vtable nupa_Extension__SpriteNode_vtable_inst = {
-    .init = NPObject_init,
-    .dealloc = Engine__Graphics__RenderNode_dealloc,
-    .initWithName_ = Engine__Graphics__RenderNode_initWithName_,
-    .renderFrame = Extension__SpriteNode_renderFrame,
-    .nodeName = Engine__Graphics__RenderNode_nodeName,
-    .position = Engine__Graphics__RenderNode_position,
-    .setPosition_ = Engine__Graphics__RenderNode_setPosition_,
-    .initWithName_textureId_ = Extension__SpriteNode_initWithName_textureId_,
-    .setAnimationCallback_ = Extension__SpriteNode_setAnimationCallback_,
-    .playAnimationFrames_ = Extension__SpriteNode_playAnimationFrames_,
-    .textureId = Extension__SpriteNode_textureId,
-    .setTextureId_ = Extension__SpriteNode_setTextureId_,
+struct nupa_vtable nupa_Engine__Graphics__RenderNode_vtable_inst = {
+    .addVector_ = NULL,
+    .dealloc = (void (*)(NPObject *, SEL))Engine__Graphics__RenderNode_dealloc,
+    .executeMainLoopIteration = NULL,
+    .init = (NPObject * (*)(NPObject *, SEL))NPObject_init,
+    .initWithName_ = (NPObject * (*)(NPObject *, SEL, const char *))Engine__Graphics__RenderNode_initWithName_,
+    .initWithName_textureId_ = NULL,
+    .initWithX_y_ = NULL,
+    .nodeName = (const char * (*)(NPObject *, SEL))Engine__Graphics__RenderNode_nodeName,
+    .playAnimationFrames_ = NULL,
+    .position = (Engine__Math__Vector2D * (*)(NPObject *, SEL))Engine__Graphics__RenderNode_position,
+    .registerNode_ = NULL,
+    .release = (void (*)(NPObject *, SEL))NPObject_release,
+    .renderFrame = (void (*)(NPObject *, SEL))Engine__Graphics__RenderNode_renderFrame,
+    .retain = (NPObject * (*)(NPObject *, SEL))NPObject_retain,
+    .setAnimationCallback_ = NULL,
+    .setPosition_ = (void (*)(NPObject *, SEL, Engine__Math__Vector2D *))Engine__Graphics__RenderNode_setPosition_,
+    .setTextureId_ = NULL,
+    .textureId = NULL,
 };
 
-struct nupa_Gameplay__GameManager_vtable nupa_Gameplay__GameManager_vtable_inst = {
-    .init = Gameplay__GameManager_init,
-    .dealloc = NPObject_dealloc,
-    .registerNode_ = Gameplay__GameManager_registerNode_,
-    .executeMainLoopIteration = Gameplay__GameManager_executeMainLoopIteration,
+struct nupa_vtable nupa_Engine__Math__Vector2D_vtable_inst = {
+    .addVector_ = (void (*)(NPObject *, SEL, Engine__Math__Vector2D *))Engine__Math__Vector2D_addVector_,
+    .dealloc = (void (*)(NPObject *, SEL))NPObject_dealloc,
+    .executeMainLoopIteration = NULL,
+    .init = (NPObject * (*)(NPObject *, SEL))NPObject_init,
+    .initWithName_ = NULL,
+    .initWithName_textureId_ = NULL,
+    .initWithX_y_ = (NPObject * (*)(NPObject *, SEL, int, int))Engine__Math__Vector2D_initWithX_y_,
+    .nodeName = NULL,
+    .playAnimationFrames_ = NULL,
+    .position = NULL,
+    .registerNode_ = NULL,
+    .release = (void (*)(NPObject *, SEL))NPObject_release,
+    .renderFrame = NULL,
+    .retain = (NPObject * (*)(NPObject *, SEL))NPObject_retain,
+    .setAnimationCallback_ = NULL,
+    .setPosition_ = NULL,
+    .setTextureId_ = NULL,
+    .textureId = NULL,
+};
+
+struct nupa_vtable nupa_Extension__SpriteNode_vtable_inst = {
+    .addVector_ = NULL,
+    .dealloc = (void (*)(NPObject *, SEL))Engine__Graphics__RenderNode_dealloc,
+    .executeMainLoopIteration = NULL,
+    .init = (NPObject * (*)(NPObject *, SEL))NPObject_init,
+    .initWithName_ = (NPObject * (*)(NPObject *, SEL, const char *))Engine__Graphics__RenderNode_initWithName_,
+    .initWithName_textureId_ = (NPObject * (*)(NPObject *, SEL, const char *, int))Extension__SpriteNode_initWithName_textureId_,
+    .initWithX_y_ = NULL,
+    .nodeName = (const char * (*)(NPObject *, SEL))Engine__Graphics__RenderNode_nodeName,
+    .playAnimationFrames_ = (void (*)(NPObject *, SEL, int))Extension__SpriteNode_playAnimationFrames_,
+    .position = (Engine__Math__Vector2D * (*)(NPObject *, SEL))Engine__Graphics__RenderNode_position,
+    .registerNode_ = NULL,
+    .release = (void (*)(NPObject *, SEL))NPObject_release,
+    .renderFrame = (void (*)(NPObject *, SEL))Extension__SpriteNode_renderFrame,
+    .retain = (NPObject * (*)(NPObject *, SEL))NPObject_retain,
+    .setAnimationCallback_ = (void (*)(NPObject *, SEL, Extension__ActionCompleteBlock))Extension__SpriteNode_setAnimationCallback_,
+    .setPosition_ = (void (*)(NPObject *, SEL, Engine__Math__Vector2D *))Engine__Graphics__RenderNode_setPosition_,
+    .setTextureId_ = (void (*)(NPObject *, SEL, int))Extension__SpriteNode_setTextureId_,
+    .textureId = (int (*)(NPObject *, SEL))Extension__SpriteNode_textureId,
 };
 
 struct nupa_NPObject_meta_vtable nupa_NPObject_meta_vtable_inst = {
@@ -491,67 +320,317 @@ struct nupa_NPObject_meta_vtable nupa_NPObject_meta_vtable_inst = {
     .class = NPObject_getClass,
 };
 
-struct nupa_Engine__Math__Vector2D_meta_vtable nupa_Engine__Math__Vector2D_meta_vtable_inst = {
-    .class = Engine__Math__Vector2D_getClass,
-};
-
-struct nupa_Engine__Graphics__RenderNode_meta_vtable nupa_Engine__Graphics__RenderNode_meta_vtable_inst = {
-    .class = Engine__Graphics__RenderNode_getClass,
-};
-
-struct nupa_Extension__SpriteNode_meta_vtable nupa_Extension__SpriteNode_meta_vtable_inst = {
-    .class = Extension__SpriteNode_getClass,
-};
-
 struct nupa_Gameplay__GameManager_meta_vtable nupa_Gameplay__GameManager_meta_vtable_inst = {
+    .alloc = NPObject_alloc,
+    .new = NPObject_new,
     .class = Gameplay__GameManager_getClass,
 };
 
+struct nupa_Engine__Graphics__RenderNode_meta_vtable nupa_Engine__Graphics__RenderNode_meta_vtable_inst = {
+    .alloc = NPObject_alloc,
+    .new = NPObject_new,
+    .class = Engine__Graphics__RenderNode_getClass,
+};
+
+struct nupa_Engine__Math__Vector2D_meta_vtable nupa_Engine__Math__Vector2D_meta_vtable_inst = {
+    .alloc = NPObject_alloc,
+    .new = NPObject_new,
+    .class = Engine__Math__Vector2D_getClass,
+};
+
+struct nupa_Extension__SpriteNode_meta_vtable nupa_Extension__SpriteNode_meta_vtable_inst = {
+    .alloc = NPObject_alloc,
+    .new = NPObject_new,
+    .class = Extension__SpriteNode_getClass,
+};
+
+NPClass * NPObject_getClass(NPClass * self, SEL _cmd) {
+    (void)_cmd;
+    return self;
+}
+
+NPClass * Gameplay__GameManager_getClass(NPClass * self, SEL _cmd) {
+    (void)_cmd;
+    return self;
+}
+
+NPClass * Engine__Graphics__RenderNode_getClass(NPClass * self, SEL _cmd) {
+    (void)_cmd;
+    return self;
+}
+
+NPClass * Engine__Math__Vector2D_getClass(NPClass * self, SEL _cmd) {
+    (void)_cmd;
+    return self;
+}
+
+NPClass * Extension__SpriteNode_getClass(NPClass * self, SEL _cmd) {
+    (void)_cmd;
+    return self;
+}
+
+NPClass nupa___nupa_root_class;
 NPClass nupa_NPObject_class;
-NPClass nupa_Engine__Math__Vector2D_class;
-NPClass nupa_Engine__Graphics__RenderNode_class;
-NPClass nupa_Extension__SpriteNode_class;
 NPClass nupa_Gameplay__GameManager_class;
+NPClass nupa_Engine__Graphics__RenderNode_class;
+NPClass nupa_Engine__Math__Vector2D_class;
+NPClass nupa_Extension__SpriteNode_class;
 
 void nupa_meta_init(void) {
+    nupa___nupa_root_class = (NPClass){
+        .name = "__nupa_root",
+        .superclass = NULL,
+        .instance_size = sizeof(struct __nupa_root),
+        .vtable = &nupa___nupa_root_vtable_inst,
+        .class_vtable = NULL,
+        .protocol_count = 0,
+    };
     nupa_NPObject_class = (NPClass){
         .name = "NPObject",
-        .superclass = NULL,
+        .superclass = &nupa___nupa_root_class,
         .instance_size = sizeof(struct NPObject),
         .vtable = &nupa_NPObject_vtable_inst,
         .class_vtable = &nupa_NPObject_meta_vtable_inst,
         .protocol_count = 0,
     };
-    nupa_Engine__Math__Vector2D_class = (NPClass){
-        .name = "Engine__Math__Vector2D",
-        .superclass = &nupa_NPObject_class,
-        .instance_size = sizeof(struct Engine__Math__Vector2D),
-        .vtable = &nupa_Engine__Math__Vector2D_vtable_inst,
-        .class_vtable = &nupa_Engine__Math__Vector2D_meta_vtable_inst,
-        .protocol_count = 0,
-    };
-    nupa_Engine__Graphics__RenderNode_class = (NPClass){
-        .name = "Engine__Graphics__RenderNode",
-        .superclass = &nupa_NPObject_class,
-        .instance_size = sizeof(struct Engine__Graphics__RenderNode),
-        .vtable = &nupa_Engine__Graphics__RenderNode_vtable_inst,
-        .class_vtable = &nupa_Engine__Graphics__RenderNode_meta_vtable_inst,
-        .protocol_count = 0,
-    };
-    nupa_Extension__SpriteNode_class = (NPClass){
-        .name = "Extension__SpriteNode",
-        .superclass = &nupa_Engine__Graphics__RenderNode_class,
-        .instance_size = sizeof(struct Extension__SpriteNode),
-        .vtable = &nupa_Extension__SpriteNode_vtable_inst,
-        .class_vtable = &nupa_Extension__SpriteNode_meta_vtable_inst,
-        .protocol_count = 0,
-    };
     nupa_Gameplay__GameManager_class = (NPClass){
-        .name = "Gameplay__GameManager",
+        .name = "Gameplay::GameManager",
         .superclass = &nupa_NPObject_class,
         .instance_size = sizeof(struct Gameplay__GameManager),
         .vtable = &nupa_Gameplay__GameManager_vtable_inst,
         .class_vtable = &nupa_Gameplay__GameManager_meta_vtable_inst,
         .protocol_count = 0,
     };
+    nupa_Engine__Graphics__RenderNode_class = (NPClass){
+        .name = "Engine::Graphics::RenderNode",
+        .superclass = &nupa_NPObject_class,
+        .instance_size = sizeof(struct Engine__Graphics__RenderNode),
+        .vtable = &nupa_Engine__Graphics__RenderNode_vtable_inst,
+        .class_vtable = &nupa_Engine__Graphics__RenderNode_meta_vtable_inst,
+        .protocol_count = 0,
+    };
+    nupa_Engine__Math__Vector2D_class = (NPClass){
+        .name = "Engine::Math::Vector2D",
+        .superclass = &nupa_NPObject_class,
+        .instance_size = sizeof(struct Engine__Math__Vector2D),
+        .vtable = &nupa_Engine__Math__Vector2D_vtable_inst,
+        .class_vtable = &nupa_Engine__Math__Vector2D_meta_vtable_inst,
+        .protocol_count = 0,
+    };
+    nupa_Extension__SpriteNode_class = (NPClass){
+        .name = "Extension::SpriteNode",
+        .superclass = &nupa_Engine__Graphics__RenderNode_class,
+        .instance_size = sizeof(struct Extension__SpriteNode),
+        .vtable = &nupa_Extension__SpriteNode_vtable_inst,
+        .class_vtable = &nupa_Extension__SpriteNode_meta_vtable_inst,
+        .protocol_count = 0,
+    };
 }
+NPObject * __nupa_root_init(NPObject * self, SEL _cmd) {
+  return nupa_init(self);
+}
+
+void __nupa_root_dealloc(NPObject * self, SEL _cmd) {
+  return;
+}
+
+void __nupa_root_release(NPObject * self, SEL _cmd) {
+  nupa_release(self);
+}
+
+NPObject * __nupa_root_retain(NPObject * self, SEL _cmd) {
+  return nupa_retain(self);
+}
+
+NPObject * NPObject_alloc(NPClass * self, SEL _cmd) {
+  return nupa_alloc(self);
+}
+
+NPObject * NPObject_new(NPClass * self, SEL _cmd) {
+  NPObject * obj = nupa_alloc(self);
+  return nupa_init(obj);
+}
+
+NPObject * NPObject_init(NPObject * self, SEL _cmd) {
+  return nupa_init(self);
+}
+
+void NPObject_dealloc(NPObject * self, SEL _cmd) {
+  return;
+}
+
+void NPObject_release(NPObject * self, SEL _cmd) {
+  nupa_release(self);
+}
+
+NPObject * NPObject_retain(NPObject * self, SEL _cmd) {
+  return nupa_retain(self);
+}
+
+NPObject * Engine__Math__Vector2D_initWithX_y_(NPObject * self, SEL _cmd, int posX, int posY) {
+  self = (&nupa_NPObject_vtable_inst)->init(self, __nupa_sel_init);
+  if (self)   {
+    ((struct Engine__Math__Vector2D *)self)->x = posX;
+    ((struct Engine__Math__Vector2D *)self)->y = posY;
+  }
+  return self;
+}
+
+void Engine__Math__Vector2D_addVector_(NPObject * self, SEL _cmd, Engine__Math__Vector2D * other) {
+  if (other)   {
+    (((struct Engine__Math__Vector2D *)self)->x += other->x);
+    (((struct Engine__Math__Vector2D *)self)->y += other->y);
+  }
+}
+
+NPObject * Engine__Graphics__RenderNode_initWithName_(NPObject * self, SEL _cmd, const char * name) {
+  self = (&nupa_NPObject_vtable_inst)->init(self, __nupa_sel_init);
+  if (self)   {
+    ((struct Engine__Graphics__RenderNode *)self)->_nodeName = name;
+    ((struct Engine__Graphics__RenderNode *)self)->_position = (Engine__Math__Vector2D *)(({ NPObject *__nupa_tmp_1 = ((NPObject *)(NPObject_alloc(&nupa_Engine__Math__Vector2D_class, __nupa_sel_alloc))); __nupa_tmp_1 ? ((struct nupa_vtable *)__nupa_tmp_1->isa->vtable)->initWithX_y_(__nupa_tmp_1, __nupa_sel_initWithX_y_, 0, 0) : 0; }));
+  }
+  return self;
+}
+
+void Engine__Graphics__RenderNode_renderFrame(NPObject * self, SEL _cmd) {
+  printf("[基类节点] 正在执行通用绘制 -> 节点名: %s | 坐标: (%d, %d)\n", ((struct Engine__Graphics__RenderNode *)self)->_nodeName, ((struct Engine__Graphics__RenderNode *)self)->_position->x, ((struct Engine__Graphics__RenderNode *)self)->_position->y);
+}
+
+const char * Engine__Graphics__RenderNode_nodeName(NPObject * self, SEL _cmd) {
+  return ((struct Engine__Graphics__RenderNode *)self)->_nodeName;
+}
+
+Engine__Math__Vector2D * Engine__Graphics__RenderNode_position(NPObject * self, SEL _cmd) {
+  return ((struct Engine__Graphics__RenderNode *)self)->_position;
+}
+
+void Engine__Graphics__RenderNode_setPosition_(NPObject * self, SEL _cmd, Engine__Math__Vector2D * value) {
+  ((struct Engine__Graphics__RenderNode *)self)->_position = value;
+}
+
+void Engine__Graphics__RenderNode_dealloc(NPObject * self, SEL _cmd) {
+  ({ NPObject *__nupa_tmp_2 = ((NPObject *)(((struct Engine__Graphics__RenderNode *)self)->_position)); __nupa_tmp_2 ? ((struct nupa_vtable *)__nupa_tmp_2->isa->vtable)->release(__nupa_tmp_2, __nupa_sel_release) : 0; });
+  (&nupa_NPObject_vtable_inst)->dealloc(self, __nupa_sel_dealloc);
+}
+
+NPObject * Extension__SpriteNode_initWithName_textureId_(NPObject * self, SEL _cmd, const char * name, int tId) {
+  self = (&nupa_Engine__Graphics__RenderNode_vtable_inst)->initWithName_(self, __nupa_sel_initWithName_, name);
+  if (self)   {
+    ((struct Extension__SpriteNode *)self)->_textureId = tId;
+    ((struct Extension__SpriteNode *)self)->_animationCallback = NULL;
+  }
+  return self;
+}
+
+void Extension__SpriteNode_setAnimationCallback_(NPObject * self, SEL _cmd, Extension__ActionCompleteBlock cb) {
+  ((struct Extension__SpriteNode *)self)->_animationCallback = cb;
+}
+
+void Extension__SpriteNode_playAnimationFrames_(NPObject * self, SEL _cmd, int total) {
+  printf("[精灵动画] 开始播放帧序列，预计播放 %d 帧...\n", total);
+  if (((struct Extension__SpriteNode *)self)->_animationCallback)   {
+    (((struct Extension__SpriteNode *)self)->_position->x += (total * 2));
+    (((struct Extension__SpriteNode *)self)->_position->y += (total * 3));
+    ((struct Extension__SpriteNode *)self)->_animationCallback(total, ((struct Extension__SpriteNode *)self)->_position);
+  }
+}
+
+void Extension__SpriteNode_renderFrame(NPObject * self, SEL _cmd) {
+  printf("[子类精灵] [VTable 多态] 渲染贴图 -> 资源ID: %d | 节点名: %s | 坐标: (%d, %d)\n", ((struct Extension__SpriteNode *)self)->_textureId, ((struct Extension__SpriteNode *)self)->_nodeName, ((struct Extension__SpriteNode *)self)->_position->x, ((struct Extension__SpriteNode *)self)->_position->y);
+}
+
+int Extension__SpriteNode_textureId(NPObject * self, SEL _cmd) {
+  return ((struct Extension__SpriteNode *)self)->_textureId;
+}
+
+void Extension__SpriteNode_setTextureId_(NPObject * self, SEL _cmd, int value) {
+  ((struct Extension__SpriteNode *)self)->_textureId = value;
+}
+
+void Gameplay__GameManager_registerNode_(NPObject * self, SEL _cmd, Engine__Graphics__RenderNode * node) {
+  if ((((struct Gameplay__GameManager *)self)->_nodeCount < 3))   {
+    ((struct Gameplay__GameManager *)self)->_activeNodes[((struct Gameplay__GameManager *)self)->_nodeCount] = node;
+    ((struct Gameplay__GameManager *)self)->_nodeCount++;
+  }
+}
+
+void Gameplay__GameManager_executeMainLoopIteration(NPObject * self, SEL _cmd) {
+  printf("[GameManager] ---- 启动这一帧的逻辑与渲染管线 ----\n");
+  for (int i = 0;
+(i < ((struct Gameplay__GameManager *)self)->_nodeCount); i++)   {
+    ({ NPObject *__nupa_tmp_3 = ((NPObject *)(((struct Gameplay__GameManager *)self)->_activeNodes[i])); __nupa_tmp_3 ? ((struct nupa_vtable *)__nupa_tmp_3->isa->vtable)->renderFrame(__nupa_tmp_3, __nupa_sel_renderFrame) : 0; });
+  }
+}
+
+NPObject * Gameplay__GameManager_init(NPObject * self, SEL _cmd) {
+  self = (&nupa_NPObject_vtable_inst)->init(self, __nupa_sel_init);
+  if (self)   {
+    ((struct Gameplay__GameManager *)self)->_nodeCount = 0;
+  }
+  return self;
+}
+
+NPObject * nupa_alloc(struct NPClass * cls);
+
+NPObject * nupa_init(NPObject * self);
+
+void nupa_release(NPObject * obj);
+
+NPObject * nupa_retain(NPObject * obj);
+
+int main(int argc, const char * argv[]) {
+  nupa_meta_init();
+  {
+    nupa_autoreleasepool_t * __nupa_pool = nupa_autoreleasepool_push();
+    printf("=========================================================\n");
+    printf(">>>    nupac 编译器「方括号内 :: 全称消息传递」集成压测   <<<\n");
+    printf("=========================================================\n\n");
+    NPObject *__nupa_tmp_4 = (NPObject_alloc(&nupa_Gameplay__GameManager_class, __nupa_sel_alloc));
+    Gameplay__GameManager * manager = (Gameplay__GameManager *)(((struct nupa_vtable *)__nupa_tmp_4->isa->vtable)->init(__nupa_tmp_4, __nupa_sel_init));
+    NPObject *__nupa_tmp_5 = (NPObject_alloc(&nupa_Engine__Graphics__RenderNode_class, __nupa_sel_alloc));
+    Engine__Graphics__RenderNode * bgNode = (Engine__Graphics__RenderNode *)(((struct nupa_vtable *)__nupa_tmp_5->isa->vtable)->initWithName_(__nupa_tmp_5, __nupa_sel_initWithName_, "Background_Layer"));
+    NPObject *__nupa_tmp_6 = (NPObject_alloc(&nupa_Extension__SpriteNode_class, __nupa_sel_alloc));
+    Extension__SpriteNode * heroSprite = (Extension__SpriteNode *)(((struct nupa_vtable *)__nupa_tmp_6->isa->vtable)->initWithName_textureId_(__nupa_tmp_6, __nupa_sel_initWithName_textureId_, "Hero_Character", 9001));
+    NPObject *__nupa_tmp_7 = (NPObject_alloc(&nupa_Extension__SpriteNode_class, __nupa_sel_alloc));
+    Extension__SpriteNode * enemySprite = (Extension__SpriteNode *)(((struct nupa_vtable *)__nupa_tmp_7->isa->vtable)->initWithName_textureId_(__nupa_tmp_7, __nupa_sel_initWithName_textureId_, "Boss_Dragon", 9999));
+    NPObject *__nupa_tmp_8 = (NPObject_alloc(&nupa_Engine__Math__Vector2D_class, __nupa_sel_alloc));
+    Engine__Math__Vector2D * offset1 = (Engine__Math__Vector2D *)(((struct nupa_vtable *)__nupa_tmp_8->isa->vtable)->initWithX_y_(__nupa_tmp_8, __nupa_sel_initWithX_y_, 100, 150));
+    NPObject *__nupa_tmp_9 = (NPObject_alloc(&nupa_Engine__Math__Vector2D_class, __nupa_sel_alloc));
+    Engine__Math__Vector2D * offset2 = (Engine__Math__Vector2D *)(((struct nupa_vtable *)__nupa_tmp_9->isa->vtable)->initWithX_y_(__nupa_tmp_9, __nupa_sel_initWithX_y_, 500, 800));
+    ({ NPObject *__nupa_tmp_10 = ((NPObject *)(((struct nupa_vtable *)(bgNode->isa->vtable))->position((NPObject *)(bgNode), __nupa_sel_position))); __nupa_tmp_10 ? ((struct nupa_vtable *)__nupa_tmp_10->isa->vtable)->addVector_(__nupa_tmp_10, __nupa_sel_addVector_, (Engine__Math__Vector2D *)(offset1)) : 0; });
+    ({ NPObject *__nupa_tmp_11 = ((NPObject *)(((struct nupa_vtable *)(heroSprite->isa->vtable))->position((NPObject *)(heroSprite), __nupa_sel_position))); __nupa_tmp_11 ? ((struct nupa_vtable *)__nupa_tmp_11->isa->vtable)->addVector_(__nupa_tmp_11, __nupa_sel_addVector_, (Engine__Math__Vector2D *)(offset2)) : 0; });
+    ((struct nupa_vtable *)(manager->isa->vtable))->registerNode_((NPObject *)(manager), __nupa_sel_registerNode_, (Engine__Graphics__RenderNode *)(bgNode));
+    ((struct nupa_vtable *)(manager->isa->vtable))->registerNode_((NPObject *)(manager), __nupa_sel_registerNode_, (Engine__Graphics__RenderNode *)(heroSprite));
+    ((struct nupa_vtable *)(manager->isa->vtable))->registerNode_((NPObject *)(manager), __nupa_sel_registerNode_, (Engine__Graphics__RenderNode *)(enemySprite));
+    void (^onHeroActionFinished)(int, Engine__Math__Vector2D *) = ^void(int frames, Engine__Math__Vector2D * finalPos) {
+  printf("[全局事件中心] 捕获到精灵动作结束信号！\n");
+  printf("       -> 播放帧数: %d\n", frames);
+  printf("       -> 精灵最终落点物理坐标: (%d, %d)\n", finalPos->x, finalPos->y);
+}
+;
+    ((struct nupa_vtable *)(heroSprite->isa->vtable))->setAnimationCallback_((NPObject *)(heroSprite), __nupa_sel_setAnimationCallback_, onHeroActionFinished);
+    ((struct nupa_vtable *)(manager->isa->vtable))->executeMainLoopIteration((NPObject *)(manager), __nupa_sel_executeMainLoopIteration);
+    printf("\n>>> 模拟游戏内幕：主角释放大招，触发关键帧动画...\n");
+    ((struct nupa_vtable *)(heroSprite->isa->vtable))->playAnimationFrames_((NPObject *)(heroSprite), __nupa_sel_playAnimationFrames_, 24);
+    printf("\n");
+    ((struct nupa_vtable *)(manager->isa->vtable))->executeMainLoopIteration((NPObject *)(manager), __nupa_sel_executeMainLoopIteration);
+    printf("\n--- 压测恶心复合语法边界（方括号内全称表达式） ---\n");
+    int syntaxControl = 1;
+    int secondarySideEffect = 100;
+    int evaluatedTexture = (syntaxControl > 0) ? ({ NPObject *__nupa_tmp_12 = ((NPObject *)((secondarySideEffect++, enemySprite))); __nupa_tmp_12 ? ((struct nupa_vtable *)__nupa_tmp_12->isa->vtable)->textureId(__nupa_tmp_12, __nupa_sel_textureId) : 0; }) : 0;
+    printf("[复合断言] 边界切分完美！副作用计数: %d | 抓取Boss纹理ID: %d\n", secondarySideEffect, evaluatedTexture);
+    printf("\n--- 正在启动对象拓扑树资源安全销毁... ---\n");
+    ((struct nupa_vtable *)(offset1->isa->vtable))->release((NPObject *)(offset1), __nupa_sel_release);
+    ((struct nupa_vtable *)(offset2->isa->vtable))->release((NPObject *)(offset2), __nupa_sel_release);
+    ((struct nupa_vtable *)(bgNode->isa->vtable))->release((NPObject *)(bgNode), __nupa_sel_release);
+    ((struct nupa_vtable *)(heroSprite->isa->vtable))->release((NPObject *)(heroSprite), __nupa_sel_release);
+    ((struct nupa_vtable *)(enemySprite->isa->vtable))->release((NPObject *)(enemySprite), __nupa_sel_release);
+    ((struct nupa_vtable *)(manager->isa->vtable))->release((NPObject *)(manager), __nupa_sel_release);
+    printf("\n=========================================================\n");
+    printf(">>>    太强了！方括号内直接解析「::」全称消息传递成功！   <<<\n");
+    printf("=========================================================\n");
+    nupa_autoreleasepool_pop(__nupa_pool);
+  }
+  return 0;
+}
+
