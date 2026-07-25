@@ -10,6 +10,7 @@ pub struct AstType {
     pub is_block: bool,
     pub is_array: bool,
     pub is_struct: bool,
+    pub is_unsigned: bool,
     pub array_size: i32,
     /// Symbolic array size identifier when the source used a macro/enum
     /// constant (e.g. `FSNode *_children[MAX_CHILDREN];`). When Some, codegen
@@ -31,7 +32,7 @@ impl AstType {
     pub fn new(prim: TypePrim) -> Self {
         AstType {
             prim, is_pointer: false, is_const: false, is_block: false,
-            is_array: false, is_struct: false, array_size: 0,
+            is_array: false, is_struct: false, is_unsigned: false, array_size: 0,
             subtype: None, block_params: None, block_name: None, next: None,
             type_args: Vec::new(), name: None,
             class_ref: None, protocol_ref: None, protocol_refs: Vec::new(),

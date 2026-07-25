@@ -6,6 +6,7 @@
 # Nupa 编程语言
 
 [概述](#概述) · [为什么要创造出 Nupa？](#为什么要创造出-nupa) · [快速开始](#快速开始) · [语言特性](#语言特性) · [新特性](#新特性) · [编译与运行](#编译与运行) · [代码示例](#代码示例) · [设计原则](#设计原则) · [路线图](#路线图) · [FAQ](#faq)
+
 </div>
 
 ---
@@ -60,7 +61,7 @@ ninja -C builddir
 
 ```bash
 # 只输出 C 代码（自动推导 .np → .c）
-nupac --rewrite-nupa hello.np
+nupac -rewrite-nupa hello.np
 nupac hello.np --rewrite-nupa              # flag 放哪都行
 nupac --rewrite-nupa hello.np -o out.c     # 也可以显式指定路径
 

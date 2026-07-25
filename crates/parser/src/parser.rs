@@ -242,7 +242,7 @@ impl<'a> Parser<'a> {
             else { false }
         } {}
 
-        if self.match_keyword(KeywordKind::Unsigned) { t.prim = TypePrim::Unsigned; }
+        if self.match_keyword(KeywordKind::Unsigned) { t.prim = TypePrim::Unsigned; t.is_unsigned = true; }
         else if self.match_keyword(KeywordKind::Signed) { t.prim = TypePrim::Signed; }
 
         if self.match_keyword(KeywordKind::Long) {
@@ -384,7 +384,7 @@ impl<'a> Parser<'a> {
         while self.match_token(TokenKind::Star) {
             let mut ptr = CstType::new(t.prim);
             ptr.is_pointer = true;
-            ptr.name = std::mem::take(&mut t.name);
+            ptr.name = t.name.clone();
             ptr.is_struct = t.is_struct;
             ptr.protocols = std::mem::take(&mut t.protocols);
             ptr.type_args = std::mem::take(&mut t.type_args);
@@ -613,7 +613,12 @@ impl<'a> Parser<'a> {
             });
         }
         if self.match_token(TokenKind::Integer) {
-            let val = self.previous_text().parse::<i64>().unwrap_or(0);
+            let text = self.previous_text();
+            let val = if text.len() > 2 && (text.starts_with("0x") || text.starts_with("0X")) {
+                i64::from_str_radix(&text[2..], 16).unwrap_or(0)
+            } else {
+                text.parse::<i64>().unwrap_or(0)
+            };
             return Some(CstExpr {
                 kind: CstExprKind::Integer, expr_type: None,
                 line: self.previous.line, col: self.previous.column,
@@ -649,7 +654,31 @@ impl<'a> Parser<'a> {
         if self.match_keyword(KeywordKind::AtSelector) {
             self.consume(TokenKind::LParen, "expected '(' after @selector");
             let mut sel = String::new();
-            while self.current.kind == TokenKind::Identifier {
+            while self.current.kind == TokenKind::Identifier ||
+                  (self.current.kind == TokenKind::Keyword && !matches!(self.current.keyword,
+                      KeywordKind::AtInterface | KeywordKind::AtImplementation | KeywordKind::AtEnd |
+                      KeywordKind::AtProperty | KeywordKind::AtSynthesize | KeywordKind::AtDynamic |
+                      KeywordKind::AtSelector | KeywordKind::AtEncode | KeywordKind::AtProtocol |
+                      KeywordKind::AtOptional | KeywordKind::AtRequired | KeywordKind::AtClass |
+                      KeywordKind::AtTry | KeywordKind::AtCatch | KeywordKind::AtFinally |
+                      KeywordKind::AtThrow | KeywordKind::AtSynchronized | KeywordKind::AtAutoreleasepool |
+                      KeywordKind::AtPublic | KeywordKind::AtPackage | KeywordKind::AtProtected |
+                      KeywordKind::AtPrivate | KeywordKind::AtDefs | KeywordKind::AtNamespace |
+                      KeywordKind::AtUsing | KeywordKind::Self_ | KeywordKind::Super |
+                      KeywordKind::Return | KeywordKind::If | KeywordKind::Else |
+                      KeywordKind::Switch | KeywordKind::Case | KeywordKind::Default |
+                      KeywordKind::While | KeywordKind::Do | KeywordKind::For |
+                      KeywordKind::Break | KeywordKind::Continue | KeywordKind::Goto |
+                      KeywordKind::Sizeof | KeywordKind::Typeof | KeywordKind::Typedef |
+                      KeywordKind::Struct | KeywordKind::Union | KeywordKind::Enum |
+                      KeywordKind::Const | KeywordKind::Volatile | KeywordKind::Extern |
+                      KeywordKind::Static | KeywordKind::Auto | KeywordKind::Register |
+                      KeywordKind::Inline | KeywordKind::Restrict |
+                      KeywordKind::Imp | KeywordKind::NpZone |
+                      KeywordKind::Import | KeywordKind::Include | KeywordKind::Define |
+                      KeywordKind::Ifdef | KeywordKind::Ifndef | KeywordKind::Endif |
+                      KeywordKind::Pragma | KeywordKind::Elif | KeywordKind::Undef
+                  )) {
                 self.advance();
                 sel.push_str(self.previous_text());
                 if self.current.kind == TokenKind::Colon {
@@ -892,7 +921,7 @@ impl<'a> Parser<'a> {
 
             let mut elements = Vec::new();
             while !self.check(TokenKind::RBracket) && !self.check(TokenKind::Eof) {
-                if let Some(e) = self.parse_expression() {
+                if let Some(e) = self.parse_assignment() {
                     elements.push(e);
                 }
                 if !self.match_token(TokenKind::Comma) { break; }
@@ -919,7 +948,7 @@ impl<'a> Parser<'a> {
             let mut values = Vec::new();
             let mut is_dict = false;
             while !self.check(TokenKind::RBrace) && !self.check(TokenKind::Eof) {
-                if let Some(k) = self.parse_expression() {
+                if let Some(k) = self.parse_assignment() {
                     if self.match_token(TokenKind::Colon) {
                         is_dict = true;
                         if let Some(v) = self.parse_expression() {
@@ -959,7 +988,7 @@ impl<'a> Parser<'a> {
     fn parse_init_list_or_dict(&mut self) -> Option<CstExpr> {
         let mut elements = Vec::new();
         while !self.check(TokenKind::RBrace) && !self.check(TokenKind::Eof) {
-            if let Some(e) = self.parse_expression() {
+            if let Some(e) = self.parse_assignment() {
                 elements.push(e);
             }
             if !self.match_token(TokenKind::Comma) { break; }
@@ -1999,6 +2028,9 @@ impl<'a> Parser<'a> {
                         if self.current.kind == TokenKind::Integer {
                             arr_type.array_size = self.current_text().parse().unwrap_or(0);
                             self.advance();
+                        } else if self.current.kind == TokenKind::Identifier {
+                            arr_type.array_size_name = Some(self.current_text().to_string());
+                            self.advance();
                         }
                         self.consume(TokenKind::RBracket, "expected ']' after array size");
                         pt = arr_type;
@@ -2101,7 +2133,7 @@ impl<'a> Parser<'a> {
                     name: Some(name), subtype: None, next: None,
                     block_params: None, is_const: false, is_block: false,
                     is_array: false, array_size: 0, is_volatile: false,
-                    is_block_qual: false, is_weak_qual: false,
+                    is_block_qual: false, is_weak_qual: false, is_unsigned: false,
                     block_name: None, protocols: Vec::new(), type_args: Vec::new(),
                     array_size_name: None,
                 };
@@ -2261,6 +2293,9 @@ impl<'a> Parser<'a> {
                     array_type.is_array = true;
                     if self.current.kind == TokenKind::Integer {
                         array_type.array_size = self.current_text().parse().unwrap_or(0);
+                        self.advance();
+                    } else if self.current.kind == TokenKind::Identifier {
+                        array_type.array_size_name = Some(self.current_text().to_string());
                         self.advance();
                     }
                     *var_type = Some(Box::new(array_type));
@@ -2820,7 +2855,31 @@ impl<'a> Parser<'a> {
                        self.current.keyword == KeywordKind::AtDynamic) {
                 let is_dynamic = self.current.keyword == KeywordKind::AtDynamic;
                 self.advance();
-                while self.current.kind == TokenKind::Identifier {
+            while self.current.kind == TokenKind::Identifier ||
+                  (self.current.kind == TokenKind::Keyword && !matches!(self.current.keyword,
+                      KeywordKind::AtInterface | KeywordKind::AtImplementation | KeywordKind::AtEnd |
+                      KeywordKind::AtProperty | KeywordKind::AtSynthesize | KeywordKind::AtDynamic |
+                      KeywordKind::AtSelector | KeywordKind::AtEncode | KeywordKind::AtProtocol |
+                      KeywordKind::AtOptional | KeywordKind::AtRequired | KeywordKind::AtClass |
+                      KeywordKind::AtTry | KeywordKind::AtCatch | KeywordKind::AtFinally |
+                      KeywordKind::AtThrow | KeywordKind::AtSynchronized | KeywordKind::AtAutoreleasepool |
+                      KeywordKind::AtPublic | KeywordKind::AtPackage | KeywordKind::AtProtected |
+                      KeywordKind::AtPrivate | KeywordKind::AtDefs | KeywordKind::AtNamespace |
+                      KeywordKind::AtUsing | KeywordKind::Self_ | KeywordKind::Super |
+                      KeywordKind::Return | KeywordKind::If | KeywordKind::Else |
+                      KeywordKind::Switch | KeywordKind::Case | KeywordKind::Default |
+                      KeywordKind::While | KeywordKind::Do | KeywordKind::For |
+                      KeywordKind::Break | KeywordKind::Continue | KeywordKind::Goto |
+                      KeywordKind::Sizeof | KeywordKind::Typeof | KeywordKind::Typedef |
+                      KeywordKind::Struct | KeywordKind::Union | KeywordKind::Enum |
+                      KeywordKind::Const | KeywordKind::Volatile | KeywordKind::Extern |
+                      KeywordKind::Static | KeywordKind::Auto | KeywordKind::Register |
+                      KeywordKind::Inline | KeywordKind::Restrict |
+                      KeywordKind::Imp | KeywordKind::NpZone |
+                      KeywordKind::Import | KeywordKind::Include | KeywordKind::Define |
+                      KeywordKind::Ifdef | KeywordKind::Ifndef | KeywordKind::Endif |
+                      KeywordKind::Pragma | KeywordKind::Elif | KeywordKind::Undef
+                  )) {
                     let prop_name = self.current_text().to_string();
                     self.advance();
                     if self.match_token(TokenKind::Assign) {

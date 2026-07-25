@@ -60,7 +60,7 @@ typedef struct NPProtocolMethod {
     const char *encoding;
 } NPProtocolMethod;
 
-typedef struct NPProtocol {
+struct NPProtocol {
     const char *name;
     struct NPProtocol **parents;
     int parent_count;
@@ -68,7 +68,7 @@ typedef struct NPProtocol {
     int required_count;
     NPProtocolMethod *optional_methods;
     int optional_count;
-} NPProtocol;
+};
 
 // ─── Internal types (for runtime implementation) ────────────────────────────────
 

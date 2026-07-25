@@ -20,6 +20,7 @@ pub struct CstType {
     pub is_struct: bool,
     pub is_block_qual: bool,
     pub is_weak_qual: bool,
+    pub is_unsigned: bool,
     pub array_size: i32,
     /// Symbolic array size identifier (e.g. `MAX_CHILDREN` in
     /// `FSNode *_children[MAX_CHILDREN];`). When Some, codegen emits the
@@ -40,7 +41,7 @@ impl CstType {
             prim,
             is_pointer: false, is_const: false, is_volatile: false,
             is_block: false, is_array: false, is_struct: false,
-            is_block_qual: false, is_weak_qual: false,
+            is_block_qual: false, is_weak_qual: false, is_unsigned: false,
             array_size: 0,
             subtype: None, name: None, block_name: None,
             block_params: None, next: None,

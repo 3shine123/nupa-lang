@@ -91,6 +91,7 @@ impl Elaborator {
     fn convert_type(&mut self, ct: &CstType) -> Option<AstType> {
         let mut at = AstType::new(ct.prim);
         at.is_pointer = ct.is_pointer; at.is_const = ct.is_const; at.is_block = ct.is_block;
+        at.is_unsigned = ct.is_unsigned;
         at.is_array = ct.is_array; at.is_struct = ct.is_struct; at.array_size = ct.array_size;
         at.array_size_name = ct.array_size_name.clone();
         at.name = ct.name.clone();
@@ -186,6 +187,18 @@ impl Elaborator {
                         } else if st.find_class(name).is_some() {
                             is_class_method = true;
                             None
+                        } else if let Some(lt) = name.find('<') {
+                            // Generic type reference like `LogBuffer<LogTool::LogEntry*>`
+                            // Strip type args to check if the base class is registered.
+                            let base_name = &name[..lt];
+                            let args_part = &name[lt..]; // `<LogTool::LogEntry*>`
+                            let base_fqn = self.ns_fqn(base_name);
+                            if st.find_class(&base_fqn).is_some() {
+                                is_class_method = true;
+                                Some(format!("{}{}", base_fqn, args_part))
+                            } else {
+                                None
+                            }
                         } else {
                             None
                         }
@@ -497,7 +510,11 @@ impl Elaborator {
                 AstStmt { kind: AstStmtKind::Try, line, col, data: AstStmtData::Try { try_block: Box::new(self.convert_stmt(try_block).unwrap_or_else(make_compound_stmt)), catches: catches.iter().filter_map(|c| self.convert_stmt(c)).collect(), finally_block: finally_block.as_ref().map(|f| Box::new(self.convert_stmt(f).unwrap_or_else(make_compound_stmt))) } }
             }
             CstStmtData::Catch { param, body } => {
-                AstStmt { kind: AstStmtKind::Catch, line, col, data: AstStmtData::Catch { param: param.clone(), body: Box::new(self.convert_stmt(body).unwrap_or_else(make_compound_stmt)) } }
+                let mut resolved_param = param.clone();
+                if let Some(ref mut pt) = resolved_param.par_type {
+                    Self::resolve_cst_type_name(pt, &self.ns_prefix, &self.symtab);
+                }
+                AstStmt { kind: AstStmtKind::Catch, line, col, data: AstStmtData::Catch { param: resolved_param, body: Box::new(self.convert_stmt(body).unwrap_or_else(make_compound_stmt)) } }
             }
             CstStmtData::Finally(body) => {
                 AstStmt { kind: AstStmtKind::Finally, line, col, data: AstStmtData::Finally(Box::new(self.convert_stmt(body).unwrap_or_else(make_compound_stmt))) }

@@ -390,16 +390,17 @@ fn cst_type_to_c_str(ct: &nupa_cst::CstType) -> String {
         if ct.array_size > 0 { return format!("{}[{}]", base, ct.array_size); }
         return format!("{}[]", base);
     }
-    let mut s = String::new();
-    // For pointer types, const on the pointed-to type (subtype) goes BEFORE the base type
+    // Recurse through pointer chain to build correct type with all * levels
     if ct.is_pointer {
-        if ct.subtype.as_ref().map(|st| st.is_const).unwrap_or(false) {
-            s.push_str("const ");
+        let base = cst_type_to_c_str(ct.subtype.as_ref().unwrap());
+        if ct.is_const {
+            return format!("{} * const", base);
         }
-    } else {
-        // For non-pointer types, const applies to the type itself
-        if ct.is_const { s.push_str("const "); }
+        return format!("{} *", base);
     }
+    let mut s = String::new();
+    if ct.is_const { s.push_str("const "); }
+    if ct.is_unsigned && ct.prim != TypePrim::Unsigned { s.push_str("unsigned "); }
     match ct.prim {
         TypePrim::Void => s.push_str("void"),
         TypePrim::Char => s.push_str("char"),
@@ -431,13 +432,6 @@ fn cst_type_to_c_str(ct: &nupa_cst::CstType) -> String {
                 if ct.is_struct { s.push_str(&format!("struct {}", flat)); }
                 else { s.push_str(&flat); }
             } else { s.push_str("int"); }
-        }
-    }
-    if ct.is_pointer {
-        s.push_str(" *");
-        // const on the pointer itself goes AFTER the *
-        if ct.is_const {
-            s.push_str("const ");
         }
     }
     s
@@ -481,6 +475,8 @@ pub fn ast_type_to_c_str(t: &AstType) -> String {
         // For non-pointer types, const applies to the type itself
         if t.is_const { s.push_str("const "); }
     }
+
+    if t.is_unsigned && t.prim != TypePrim::Unsigned { s.push_str("unsigned "); }
 
     match t.prim {
         TypePrim::Void => s.push_str("void"),
@@ -1171,7 +1167,7 @@ fn convert_expr(ae: &AstExpr, class_infos: &std::collections::BTreeMap<String, C
             CgExpr { kind: CgExprKind::InitList, type_str, line, col, data: CgExprData::InitList(elements.iter().map(|e| convert_expr(e, &class_infos)).collect()) }
         }
         AstExprData::Selector(s) => {
-            CgExpr { kind: CgExprKind::Ident, type_str: None, line, col, data: CgExprData::Ident(format!("{}.hash", sel_const_name(s))) }
+            CgExpr { kind: CgExprKind::Ident, type_str: None, line, col, data: CgExprData::Ident(sel_const_name(s)) }
         }
         AstExprData::DictLit { .. } => CgExpr { kind: CgExprKind::Ident, type_str, line, col, data: CgExprData::Ident("NULL".into()) },
         AstExprData::PropRef { obj, name, is_arrow, prop, cls, .. } => {
@@ -3425,7 +3421,9 @@ pub fn emit_expr(e: &CgExpr, out: &mut String) {
         CgExprData::Ident(s) => { out.push_str(s); }
         CgExprData::Unary { op_str, operand, is_postfix } => {
             if *is_postfix {
+                out.push('(');
                 emit_expr(operand, out);
+                out.push(')');
                 out.push_str(op_str);
             } else if op_str == "sizeof" {
                 // sizeof needs parentheses around its operand for correct precedence

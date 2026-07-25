@@ -6,6 +6,7 @@
 # The Nupa Programming Language
 
 [Overview](#overview) · [Why Nupa?](#why-nupa) · [Quick Start](#quick-start) · [Language Features](#language-features) · [New Features](#new-features) · [Compilation & CLI](#compilation--cli) · [Code Examples](#code-examples) · [Design Principles](#design-principles) · [Roadmap](#roadmap) · [FAQ](#faq)
+
 </div>
 
 ---
@@ -58,7 +59,7 @@ cargo build
 
 ```bash
 # Just output C code (auto-derives .np → .c)
-nupac --rewrite-nupa hello.np
+nupac -rewrite-nupa hello.np
 nupac hello.np --rewrite-nupa              # flag works anywhere
 nupac --rewrite-nupa hello.np -o out.c     # explicit path also works
 
