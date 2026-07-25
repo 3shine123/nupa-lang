@@ -3,7 +3,7 @@
 <div align="center">
 <img src="doc/assets/Nupa_avatar.svg" alt="Nupa_avatar" width="210">
 
-# Nupa Programming Language
+# The Nupa Programming Language
 
 [Overview](#overview) · [Why Nupa?](#why-nupa) · [Quick Start](#quick-start) · [Language Features](#language-features) · [New Features](#new-features) · [Compilation & CLI](#compilation--cli) · [Code Examples](#code-examples) · [Design Principles](#design-principles) · [Roadmap](#roadmap) · [FAQ](#faq)
 </div>
