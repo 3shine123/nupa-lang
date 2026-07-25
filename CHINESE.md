@@ -1,8 +1,12 @@
 [-> English](README.md)
 
+<div align="center">
+<img src="doc/assets/Nupa_avatar.svg" alt="Nupa_avatar" width="210">
+
 # Nupa 编程语言
 
 [概述](#概述) · [为什么要创造出 Nupa？](#为什么要创造出-nupa) · [快速开始](#快速开始) · [语言特性](#语言特性) · [新特性](#新特性) · [编译与运行](#编译与运行) · [代码示例](#代码示例) · [设计原则](#设计原则) · [路线图](#路线图) · [FAQ](#faq)
+</div>
 
 ---
 
@@ -81,7 +85,7 @@ nupac -v run hello.np
 nupac hello.np -o hello.c   → Error: use -rewrite-nupa to output C code
 
 # [!] 错误：没有指定任何输出方式
-nupac hello.np              → Error: specify -o or --rewrite-nupa
+nupac hello.np              → Error: specify -o or -rewrite-nupa
 ```
 
 ### 运行测试

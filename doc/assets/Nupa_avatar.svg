@@ -1,0 +1,26 @@
+<svg width="1600" height="1600" viewBox="158.3316968313732 -31.05409601223618 483.33660633725367 483.33660633725367" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"><rect x="158.3316968313732" y="-31.05409601223618" width="483.33660633725367" height="483.33660633725367" rx="48.333660633725366" ry="48.333660633725366" id="background" fill="#FFFFFF"></rect><g class="icon-group" data-width="402.7805052810447" data-height="297.36034999460225" data-x="198.60974735947767" data-y="61.93403215908953"><g id="shape_pMcgBVerjT" ref="shape_pMcgBVerjT" key="shape_pMcgBVerjT" mask="" class=" icon">
+                <g transform="translate(196.67571520038803,59.99999999999997) rotate(0,203.32428479961197,152.42058391371566) scale(1,1)" style="opacity: 1;mix-blend-mode: undefined;" filter="">
+                  <!--普通元素-->
+                  <svg data-noselect="" viewBox="311.25179163446876 172.73160657367035 210.25946631138368 157.61949272391334" width="406.64856959922395" height="304.8411678274313" ref="svg_canvas" preserveAspectRatio="none" version="1.1" xmlns="http://www.w3.org/2000/svg" style="background: transparent;" data-parent="shape_pMcgBVerjT">
+    <defs></defs>
+    
+        <g id="shape_ZDc2AmI1TE" class="icon custom-icon text brand_first" ref="shape_ZDc2AmI1TE" key="shape_ZDc2AmI1TE" mask="">
+          <g transform="translate(-330.8431331500001,-530.9016718972101) rotate(-4,712.6757355903701,763.6757355903701) scale(1,1)" style="" filter="" cursor="move" display="inline" opacity="1">
+              <g style="" display="inline"><svg xmlns="http://www.w3.org/2000/svg" version="1.1" xmlns:xlink="http://www.w3.org/1999/xlink" width="1425.3514711807402" height="1527.3514711807402" viewBox="0 0 1425.3514711807402 1527.3514711807402" data-ligature="true" preserveAspectRatio="none" data-parent="shape_ZDc2AmI1TE"><g data-role="text" data-width="151.31999" data-height="254" transform="translate(637.0157405903701, 636.6757355903701)"><path d="M34.17 0L34.17 0Q27.59 0 22.60-5.31Q17.62-10.61 14.33-19.31Q11.04-28.01 9.02-38.41Q7.00-48.81 6.15-59.32Q5.31-69.82 5.31-78.31L5.31-78.31Q5.31-89.14 7.00-101.23Q8.70-113.33 12.95-124.05Q17.19-134.77 24.62-141.56Q32.05-148.35 43.72-148.35L43.72-148.35Q51.78-148.35 57.83-143.15Q63.88-137.95 68.76-128.72Q73.64-119.49 78.10-107.60Q82.56-95.72 87.65-82.35L87.65-82.35Q86.80-100.60 88.82-115.56Q90.83-130.52 97.20-139.44Q103.57-148.35 115.24-148.35L115.24-148.35Q125.22-148.35 131.26-141.56Q137.31-134.77 140.50-124.05Q143.68-113.33 144.85-101.23Q146.01-89.14 146.01-78.31L146.01-78.31Q146.01-69.61 144.74-59.21Q143.47-48.81 140.50-38.41Q137.53-28.01 132.43-19.31Q127.34-10.61 120.02-5.31Q112.69 0 102.51 0L102.51 0Q93.38 0 86.91-5.84Q80.44-11.67 75.45-21.33Q70.46-30.99 66.22-42.66Q61.97-54.33 57.30-66.00L57.30-66.00Q57.51-51.36 57.30-39.16Q57.09-26.95 55.07-18.25Q53.06-9.55 48.18-4.78Q43.29 0 34.17 0Z" transform="translate(0 219) " fill="rgb(255, 101, 0)" stroke="rgb(255, 101, 0)" stroke-width="0.354" data-glyph-w="151.31999" data-glyph-h="307.30904" data-glyph-ascender="246.1868" data-glyph-descender="-61.12224" data-kerning="0"></path></g></svg></g>
+          </g>
+        </g>
+        <g id="shape_jrFE6bXC4K" class="icon custom-icon" ref="shape_jrFE6bXC4K" key="shape_jrFE6bXC4K" mask="">
+          <g transform="translate(462.08956793324,177.34974281388) rotate(9,25.352187658637,74.651415891026) scale(1,1)" style="" filter="" cursor="move" display="inline" opacity="1">
+              <g style="" display="inline"><svg version="1.1" id="图层_1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" x="0px" y="0px" width="50.704375317275" height="149.30283178205" viewBox="0 0 42.58 125.38" style="enable-background:new 0 0 42.58 125.38;" xml:space="preserve" class="style-removed" preserveAspectRatio="none" data-parent="shape_jrFE6bXC4K" enable-background="new 0 0 42.58 125.38">
+
+<g>
+	<circle cx="21.29" cy="105.96" r="19.42" fill="#ff6500"></circle>
+	<path d="M21.29,0C9.8,0,0.46,9.11,0.04,20.5L0,20.5c0,0.19,0.01,0.39,0.01,0.58c0,0.07-0.01,0.14-0.01,0.2
+		c0,0.14,0.02,0.28,0.02,0.43c0.45,24.41,14.39,53.59,21.27,53.59c7,0,21.29-26.02,21.29-54.02C42.58,9.53,33.05,0,21.29,0z" fill="#ff6500"></path>
+</g>
+</svg></g>
+          </g>
+        </g>
+  </svg>
+                </g>
+              </g></g></svg>
