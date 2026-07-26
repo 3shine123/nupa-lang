@@ -93,6 +93,18 @@ SEL sel_registerName(const char *name) {
     return sel;
 }
 
+// ─── Type introspection ─────────────────────────────────────────────────────────
+
+BOOL nupa_isKindOf(NPObject *obj, NPClass *cls) {
+    if (!obj || !cls) return 0;
+    NPClass *isa = obj->isa;
+    while (isa) {
+        if (isa == cls) return 1;
+        isa = isa->superclass;
+    }
+    return 0;
+}
+
 // ─── Lifecycle ───────────────────────────────────────────────────────────────
 
 NPObject *nupa_alloc(NPClass *cls) {

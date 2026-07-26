@@ -54,17 +54,27 @@ fn is_scope_stmt(s: &AstStmt) -> bool {
 }
 
 // Insert releases before a statement at index `pos`, skipping any variable
-// that is being returned. Returns the number of releases inserted.
+// that is being returned/thrown. Returns the number of releases inserted.
+fn extract_returned_var(e: &AstExpr) -> Option<&str> {
+    match &e.data {
+        AstExprData::VarRef { name, .. } => Some(name.as_str()),
+        AstExprData::MsgSend { receiver, .. } => {
+            if let AstExprData::VarRef { name, .. } = &receiver.data {
+                Some(name.as_str())
+            } else { None }
+        }
+        _ => None,
+    }
+}
+
 fn insert_releases_before(stmts: &mut Vec<AstStmt>, pos: usize, vars: &mut Vec<String>, return_expr: Option<&AstExpr>) -> usize {
-    let returned_var = return_expr.and_then(|e| {
-        if let AstExprData::VarRef { name, .. } = &e.data { Some(name.as_str()) } else { None }
-    });
+    let returned_var = return_expr.and_then(|e| extract_returned_var(e));
     let mut count = 0;
     let mut i = 0;
     while i < vars.len() {
         let name = vars[i].clone();
         if returned_var.map_or(false, |rv| rv == name.as_str()) {
-            i += 1;
+            vars.remove(i);
             continue;
         }
         let var_ref = AstExpr {
@@ -153,9 +163,10 @@ pub fn arc_local_analyze(body: &mut AstStmt, _cfg: &Cfg, method_name: &str) -> A
                 continue;
             }
 
-            // ── Handle throw: insert releases before it ──
+            // ── Handle throw: insert releases before it (exempt thrown variable) ──
             if matches!(stmts[i].data, AstStmtData::Throw(_)) {
-                let n = insert_releases_before(stmts, i, &mut release_vars, None);
+                let throw_expr = match &stmts[i].data { AstStmtData::Throw(e) => e.clone(), _ => None };
+                let n = insert_releases_before(stmts, i, &mut release_vars, throw_expr.as_ref().map(|e| e.as_ref()));
                 i += 1 + n;
                 continue;
             }
@@ -236,6 +247,23 @@ pub fn arc_local_analyze(body: &mut AstStmt, _cfg: &Cfg, method_name: &str) -> A
                 continue;
             }
 
+            // ── Handle manual `[var release]` or `nupa_release(var)`: remove var from tracking ──
+            if let AstStmtData::Expr(e) = &stmts[i].data {
+                match &e.data {
+                    AstExprData::MsgSend { receiver, selector, args, .. } if selector == "release" && args.is_empty() => {
+                        if let AstExprData::VarRef { name, .. } = &receiver.data {
+                            release_vars.retain(|v| *v != *name);
+                        }
+                    }
+                    AstExprData::FuncCall { name, args, .. } if name == "nupa_release" && args.len() == 1 => {
+                        if let AstExprData::VarRef { name, .. } = &args[0].data {
+                            release_vars.retain(|v| *v != *name);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+
             i += 1;
         }
 
@@ -246,8 +274,8 @@ pub fn arc_local_analyze(body: &mut AstStmt, _cfg: &Cfg, method_name: &str) -> A
                 if is_return_stmt(last) {
                     // Don't release variables that are being returned
                     if let AstStmtData::Return(Some(ref e)) = last.data {
-                        if let AstExprData::VarRef { name, .. } = &e.data {
-                            release_vars.retain(|v| v != name);
+                        if let Some(rv) = extract_returned_var(e) {
+                            release_vars.retain(|v| v != rv);
                         }
                     }
                     stmts.len() - 1

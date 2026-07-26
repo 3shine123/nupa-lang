@@ -414,7 +414,7 @@ fn cst_type_to_c_str(ct: &nupa_cst::CstType) -> String {
         TypePrim::Signed => s.push_str("signed"),
         TypePrim::Unsigned => s.push_str("unsigned"),
         TypePrim::Id => s.push_str("NPObject *"),
-        TypePrim::Class => s.push_str("Class"),
+        TypePrim::Class => s.push_str("NPClass *"),
         TypePrim::Sel => s.push_str("SEL"),
         TypePrim::Instancetype => s.push_str("NPObject *"),
         TypePrim::Param => s.push_str("NPObject *"),
@@ -491,7 +491,7 @@ pub fn ast_type_to_c_str(t: &AstType) -> String {
         TypePrim::Signed => s.push_str("signed"),
         TypePrim::Unsigned => s.push_str("unsigned"),
         TypePrim::Id => s.push_str("NPObject *"),
-        TypePrim::Class => s.push_str("Class"),
+        TypePrim::Class => s.push_str("NPClass *"),
         TypePrim::Sel => s.push_str("SEL"),
         TypePrim::Instancetype => s.push_str("NPObject *"),
         TypePrim::Param => s.push_str("NPObject *"),
@@ -731,7 +731,25 @@ fn convert_expr(ae: &AstExpr, class_infos: &std::collections::BTreeMap<String, C
             // The "class" method is auto-generated on every meta vtable but NOT registered
             // in class_infos, so normal vtable dispatch can't find it. Emit the direct
             // ivar access which is semantically equivalent for all ObjC objects.
+            // When the receiver is a class name (e.g. `[Array class]`), emit
+            // `&nupa_<flat>_class` directly instead.
             if selector == "class" && !*is_super && args.is_empty() {
+                if let AstExprData::VarRef { ref name, .. } = receiver.data {
+                    let flat = name_flat(name);
+                    if class_infos.values().any(|ci| ci.flat == flat || ci.class_name == *name) {
+                        return CgExpr {
+                            kind: CgExprKind::Unary, type_str, line, col,
+                            data: CgExprData::Unary {
+                                op_str: "&".into(),
+                                operand: Box::new(CgExpr {
+                                    kind: CgExprKind::Ident, type_str: None, line, col,
+                                    data: CgExprData::Ident(format!("nupa_{}_class", flat)),
+                                }),
+                                is_postfix: false,
+                            },
+                        };
+                    }
+                }
                 let obj_cg = convert_expr(receiver, &class_infos);
                 let isa_access = CgExpr {
                     kind: CgExprKind::Arrow, type_str: None, line, col,

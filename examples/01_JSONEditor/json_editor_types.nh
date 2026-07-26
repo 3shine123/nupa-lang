@@ -79,6 +79,10 @@
     @interface Editor : NPObject {
         @public
         id _root; BOOL _running; char _inputBuf[4096];
+        int _histCount;
+        char _histCmds[128000];
+        char _histOut[256000];
+        int _histCount;
     }
         - (instancetype)init;
         - (void)dealloc;

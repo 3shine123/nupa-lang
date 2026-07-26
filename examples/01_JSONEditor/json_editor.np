@@ -10,6 +10,7 @@
 #include <ctype.h>
 #include <termios.h>
 #include <unistd.h>
+#include <sys/ioctl.h>
 #import "json_editor_types.nh"
 
 // Raw-mode input reader: handles arrow keys for cursor movement, no echo of escape sequences
@@ -595,34 +596,123 @@ static int read_line(char *buf, int size) {
     @implementation Editor
         - (instancetype)init {
             self = [super init];
-            if (self) { _root = [[Object alloc] init]; _running = YES; }
+            if (self) { _root = [[Object alloc] init]; _running = YES; _histCount = 0; }
             return self;
         }
         - (void)dealloc { [_root release]; [super dealloc]; }
 
         - (void)refreshDisplay {
+            // Terminal dimensions
+            struct winsize ws;
+            int rows = 24, cols = 80;
+            if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) == 0) {
+                rows = ws.ws_row > 0 ? ws.ws_row : 24;
+                cols = ws.ws_col > 0 ? ws.ws_col : 80;
+            }
+            int mid = rows / 2;
+            int top_avail = mid - 3;
+            int bot_avail = rows - mid - 2;
+
+            // Capture JSON preview to string via stdout redirect
+            char json_buf[131072];
+            {
+                int p[2]; pipe(p);
+                int saved = dup(STDOUT_FILENO);
+                dup2(p[1], STDOUT_FILENO); close(p[1]);
+                [_root printOn:0];
+                printf("\n");
+                fflush(stdout);
+                dup2(saved, STDOUT_FILENO); close(saved);
+                ssize_t n = read(p[0], json_buf, sizeof(json_buf)-1);
+                json_buf[n > 0 ? n : 0] = '\0';
+                close(p[0]);
+            }
+
+            // Count JSON lines
+            int line_count = 1;
+            for (int i = 0; json_buf[i]; i++)
+                if (json_buf[i] == '\n') line_count++;
+
+            // Clear screen
             printf("\033[2J\033[H");
-            printf("╔══════════════════════════════════════════════╗\n");
-            printf("║  JSON Preview                                ║\n");
-            printf("╚══════════════════════════════════════════════╝\n");
-            [_root printOn:0];
+
+            // Top box
+            printf("╔");
+            for (int i = 0; i < cols - 2; i++) printf("═");
+            printf("╗\n");
+            printf("║  JSON Preview");
+            for (int i = 16; i < cols - 2; i++) putchar(' ');
+            printf("  ║\n");
+            printf("╚");
+            for (int i = 0; i < cols - 2; i++) printf("═");
+            printf("╝\n");
+
+            // JSON content — scrollable (show last top_avail lines)
+            int skip = line_count > top_avail ? line_count - top_avail : 0;
+            char *p = json_buf;
+            for (int i = 0; i < skip; i++) {
+                while (*p && *p != '\n') p++;
+                if (*p == '\n') p++;
+            }
+            int printed = 0;
+            while (*p && printed < top_avail) {
+                char *nl = p;
+                while (*nl && *nl != '\n') nl++;
+                char saved = *nl; *nl = '\0';
+                int plen = (int)strlen(p);
+                if (plen > cols - 2) {
+                    p[cols - 3] = '\0';
+                    printf("%s~\n", p);
+                } else {
+                    printf("%s\n", p);
+                }
+                *nl = saved;
+                p = *nl ? nl + 1 : nl;
+                printed++;
+            }
+            for (int i = printed; i < top_avail; i++) printf("\n");
+
+            // Divider
+            for (int i = 0; i < cols; i++) printf("─");
             printf("\n");
-            printf("╔══════════════════════════════════════════════╗\n");
-            printf("║  Command                                     ║\n");
-            printf("╚══════════════════════════════════════════════╝\n");
+
+            // Command history (bottom area)
+            int pairs_fit = bot_avail / 2;
+            int hist_start = _histCount - pairs_fit;
+            if (hist_start < 0) hist_start = 0;
+            for (int i = hist_start; i < _histCount; i++) {
+                char *cmd = _histCmds + i * 256;
+                char *outp = _histOut + i * 512;
+                printf(">>> %s\n", cmd);
+                char out[512];
+                strncpy(out, outp, 511); out[511] = '\0';
+                int olen = (int)strlen(out);
+                while (olen > 0 && (out[olen-1] == '\n' || out[olen-1] == '\r'))
+                    out[--olen] = '\0';
+                if (olen > cols - 4) { out[cols - 4] = '\0'; strcat(out, "~"); }
+                printf("  %s\n", out);
+            }
+            int shown = (_histCount - hist_start) * 2;
+            for (int i = shown; i < bot_avail; i++) printf("\n");
+
+            // Prompt
             printf(">>> ");
             fflush(stdout);
         }
 
         - (void)run {
-            [self refreshDisplay];
+            // Switch to alternate screen buffer
+            printf("\033[?1049h"); fflush(stdout);
 
             while (_running) {
-                if (read_line(_inputBuf, sizeof(_inputBuf)) <= 0) break;
+                [self refreshDisplay];
 
-                int len = (int)strlen(_inputBuf);
-                if (len == 0) { [self refreshDisplay]; continue; }
+                int len = read_line(_inputBuf, sizeof(_inputBuf));
+                if (len < 0) break;
+                if (len == 0) continue;
+                if (_inputBuf[0] == '\0') continue;
 
+                // Parse cmd / arg
                 char *cmd = _inputBuf;
                 char *arg = "";
                 for (int i = 0; _inputBuf[i]; i++) {
@@ -631,40 +721,62 @@ static int read_line(char *buf, int size) {
                     }
                 }
 
+                // Capture stdout during command execution
+                int saved = dup(STDOUT_FILENO);
+                int pipe_r;
+                {
+                    int p[2]; pipe(p);
+                    dup2(p[1], STDOUT_FILENO); close(p[1]);
+                    pipe_r = p[0];
+                }
+
                 @autoreleasepool {
                     SEL sel = cmdSel(cmd);
                     if (sel.name[0] == '\0') {
                         printf("  Unknown: '%s'. Type 'help'.\n", cmd);
-                        printf("  Press Return to continue...");
-                        fflush(stdout);
-                        read_line(_inputBuf, sizeof(_inputBuf));
-                        [self refreshDisplay];
-                        continue;
+                    } else {
+                        const char *sn = sel.name;
+                        if      (strcmp(sn, "cmdPrint")  == 0) [self cmdPrint];
+                        else if (strcmp(sn, "cmdSet:")   == 0) [self cmdSet:arg];
+                        else if (strcmp(sn, "cmdGet:")   == 0) [self cmdGet:arg];
+                        else if (strcmp(sn, "cmdDel:")   == 0) [self cmdDel:arg];
+                        else if (strcmp(sn, "cmdKeys")   == 0) [self cmdKeys];
+                        else if (strcmp(sn, "cmdType:")  == 0) [self cmdType:arg];
+                        else if (strcmp(sn, "cmdLen")    == 0) [self cmdLen];
+                        else if (strcmp(sn, "cmdNew")    == 0) [self cmdNew];
+                        else if (strcmp(sn, "cmdParse:") == 0) [self cmdParse:arg];
+                        else if (strcmp(sn, "cmdElist")  == 0) [self cmdElist];
+                        else if (strcmp(sn, "cmdSels")   == 0) [self cmdSels];
+                        else if (strcmp(sn, "cmdHelp")   == 0) [self cmdHelp];
+                        else if (strcmp(sn, "cmdQuit")   == 0) [self cmdQuit];
                     }
-
-                    const char *sn = sel.name;
-                    if      (strcmp(sn, "cmdPrint")  == 0) [self cmdPrint];
-                    else if (strcmp(sn, "cmdSet:")   == 0) [self cmdSet:arg];
-                    else if (strcmp(sn, "cmdGet:")   == 0) [self cmdGet:arg];
-                    else if (strcmp(sn, "cmdDel:")   == 0) [self cmdDel:arg];
-                    else if (strcmp(sn, "cmdKeys")   == 0) [self cmdKeys];
-                    else if (strcmp(sn, "cmdType:")  == 0) [self cmdType:arg];
-                    else if (strcmp(sn, "cmdLen")    == 0) [self cmdLen];
-                    else if (strcmp(sn, "cmdNew")    == 0) [self cmdNew];
-                    else if (strcmp(sn, "cmdParse:") == 0) [self cmdParse:arg];
-                    else if (strcmp(sn, "cmdElist")  == 0) [self cmdElist];
-                    else if (strcmp(sn, "cmdSels")   == 0) [self cmdSels];
-                    else if (strcmp(sn, "cmdHelp")   == 0) [self cmdHelp];
-                    else if (strcmp(sn, "cmdQuit")   == 0) [self cmdQuit];
                 }
 
-                if (_running) {
-                    printf("  Press Return to continue...");
-                    fflush(stdout);
-                    read_line(_inputBuf, sizeof(_inputBuf));
-                    [self refreshDisplay];
+                fflush(stdout);
+                dup2(saved, STDOUT_FILENO); close(saved);
+
+                char out_buf[8192];
+                ssize_t n = read(pipe_r, out_buf, sizeof(out_buf)-1);
+                out_buf[n > 0 ? n : 0] = '\0';
+                close(pipe_r);
+
+                if (_histCount < 500) {
+                    strncpy(_histCmds + _histCount * 256, _inputBuf, 255);
+                    _histCmds[_histCount * 256 + 255] = '\0';
+                    strncpy(_histOut + _histCount * 512, out_buf, 511);
+                    _histOut[_histCount * 512 + 511] = '\0';
+                    _histCount++;
+                } else {
+                    memmove(_histCmds, _histCmds + 256, (500 - 1) * 256);
+                    memmove(_histOut, _histOut + 512, (500 - 1) * 512);
+                    strncpy(_histCmds + 499 * 256, _inputBuf, 255);
+                    _histCmds[499 * 256 + 255] = '\0';
+                    strncpy(_histOut + 499 * 512, out_buf, 511);
+                    _histOut[499 * 512 + 511] = '\0';
                 }
             }
+            // Restore normal screen buffer
+            printf("\033[?1049l"); fflush(stdout);
         }
 
         - (void)cmdPrint { [_root printOn:0]; printf("\n"); }

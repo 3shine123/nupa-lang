@@ -125,7 +125,15 @@ impl Binder {
                         self.symtab.find_class(&fqn)
                     });
                 if let Some(c) = cls {
-                    if c.name != *name { ct.name = Some(c.name.clone()); }
+                    if c.name != *name {
+                        let new_name = Some(c.name.clone());
+                        ct.name = new_name.clone();
+                        if let Some(ref mut sub) = ct.subtype {
+                            if sub.name == Some(name.clone()) {
+                                sub.name = new_name;
+                            }
+                        }
+                    }
                     return;
                 }
                 if self.symtab.find_protocol(name).is_some() { return; }
@@ -423,6 +431,15 @@ impl Binder {
                         if i < methods.len() {
                             self.bind_decl(&mut methods[i]);
                         }
+                    }
+                }
+                // Bind C-level declarations inside @implementation (e.g. static
+                // helper functions and variables stored in impl_vars) so that
+                // namespace-qualified types (e.g. `Table` → `TOML::Table`) are
+                // resolved via ns_prefix.
+                if let CstDeclData::Class { ref mut impl_vars, .. } = d.data {
+                    for v in impl_vars.iter_mut() {
+                        self.bind_decl(v);
                     }
                 }
                 self.current_class = old_class;

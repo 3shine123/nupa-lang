@@ -108,6 +108,7 @@ NPObject *nupa_autorelease(NPObject *obj);
 
 NPObject *nupa_alloc(NPClass *cls);
 NPObject *nupa_init(NPObject *self);
+BOOL nupa_isKindOf(NPObject *obj, NPClass *cls);
 
 // ─── Autorelease pool API ────────────────────────────────────────────────────────
 

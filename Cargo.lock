@@ -134,6 +134,7 @@ dependencies = [
  "nupa-ast",
  "nupa-binder",
  "nupa-cfg",
+ "nupa-checker",
  "nupa-codegen",
  "nupa-cst",
  "nupa-elaborator",

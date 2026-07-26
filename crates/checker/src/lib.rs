@@ -1,5 +1,5 @@
 use nupa_ast::ast::*;
-use nupa_cst::TypePrim;
+use nupa_cst::{TypePrim, CstParam};
 use nupa_symbol::*;
 
 /// Type checker for Nupa programs.
@@ -11,6 +11,7 @@ pub struct Checker {
     pub has_error: bool,
     pub error_count: i32,
     pub error_msg: String,
+    pub scope_vars: Vec<Vec<String>>,
 }
 
 impl Checker {
@@ -22,6 +23,7 @@ impl Checker {
             has_error: false,
             error_count: 0,
             error_msg: String::new(),
+            scope_vars: Vec::new(),
         }
     }
 
@@ -59,6 +61,14 @@ impl Checker {
             AstExprData::Char(_) => Some(AstType::new(TypePrim::Char)),
             AstExprData::Bool(_) => Some(AstType::new(TypePrim::Bool)),
             AstExprData::VarRef { name, .. } => {
+                for scope in self.scope_vars.iter().rev() {
+                    if scope.contains(name) {
+                        return Some(AstType::new(TypePrim::Int));
+                    }
+                }
+                if name == "self" || name == "_cmd" || name == "super" || name == "nil" || name == "NULL" || name == "YES" || name == "NO" || name == "true" || name == "false" {
+                    return Some(AstType::new(TypePrim::Int));
+                }
                 if let Some(ref st) = self.symtab {
                     if st.lookup(name).is_some() {
                         return Some(AstType::new(TypePrim::Int));
@@ -136,7 +146,9 @@ impl Checker {
         match &s.data {
             AstStmtData::Expr(e) => { self.check_expr(e); }
             AstStmtData::Compound(stmts) => {
+                self.scope_vars.push(Vec::new());
                 for stmt in stmts { self.check_stmt(stmt); }
+                self.scope_vars.pop();
             }
             AstStmtData::Return(expr) => {
                 if let Some(e) = expr { self.check_expr(e); }
@@ -192,17 +204,42 @@ impl Checker {
     }
 
     /// Check a declaration
+    fn add_params_to_scope(&mut self, params: &Option<Box<CstParam>>) {
+        if self.scope_vars.is_empty() {
+            self.scope_vars.push(Vec::new());
+        }
+        let mut p = params.as_ref().map(|b| &**b);
+        while let Some(param) = p {
+            if let Some(ref name) = param.name {
+                if let Some(scope) = self.scope_vars.last_mut() {
+                    if !scope.contains(name) {
+                        scope.push(name.clone());
+                    }
+                }
+            }
+            p = param.next.as_ref().map(|n| &**n);
+        }
+    }
+
     pub fn check_decl(&mut self, d: &AstDecl) {
         match &d.data {
-            AstDeclData::Function { body, .. } => {
+            AstDeclData::Function { body, params, .. } => {
                 if let Some(ref b) = body {
                     let old = self.current_method.clone();
                     self.current_method = d.name.clone();
+                    self.add_params_to_scope(params);
                     self.check_stmt(b);
                     self.current_method = old;
                 }
             }
             AstDeclData::Variable { init, .. } => {
+                if let Some(ref name) = d.name {
+                    if let Some(scope) = self.scope_vars.last_mut() {
+                        if !scope.contains(name) {
+                            scope.push(name.clone());
+                        }
+                    }
+                }
                 if let Some(ref i) = init { self.check_expr(i); }
             }
             AstDeclData::Class { methods, .. } => {
@@ -211,10 +248,11 @@ impl Checker {
                 for m in methods { self.check_decl(m); }
                 self.current_class = old;
             }
-            AstDeclData::Method { body, .. } => {
+            AstDeclData::Method { body, params, .. } => {
                 if let Some(ref b) = body {
                     let old = self.current_method.clone();
                     self.current_method = d.name.clone();
+                    self.add_params_to_scope(params);
                     self.check_stmt(b);
                     self.current_method = old;
                 }

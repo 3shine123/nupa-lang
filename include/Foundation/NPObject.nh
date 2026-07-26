@@ -8,6 +8,7 @@ struct NPClass;
 - (void)dealloc;
 - (void)release;
 - (id)retain;
+- (BOOL)isKindOf:(Class)cls;
 @end
 
 @interface NPObject
@@ -36,6 +37,9 @@ id nupa_retain(id obj);
 }
 - (id)retain {
     return nupa_retain(self);
+}
+- (BOOL)isKindOf:(Class)cls {
+    return nupa_isKindOf(self, cls);
 }
 @end
 
