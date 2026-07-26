@@ -46,8 +46,16 @@ pub fn ownership_for_expr(e: &AstExpr) -> Ownership {
         AstExprKind::Int | AstExprKind::Float | AstExprKind::Bool |
         AstExprKind::Nil | AstExprKind::Null => Ownership::Unretained,
         AstExprKind::MsgSend => {
-            if let AstExprData::MsgSend { ref selector, .. } = e.data {
-                ownership_for_method(&selector)
+            if let AstExprData::MsgSend { ref selector, ref receiver, .. } = e.data {
+                let ow = ownership_for_method(&selector);
+                // init on a retained receiver (e.g. [[Cls alloc] init]) → Retained
+                if ow == Ownership::Unretained && (selector == "init" || selector.starts_with("init")) {
+                    let recv_ow = ownership_for_expr(receiver);
+                    if recv_ow == Ownership::Retained {
+                        return Ownership::Retained;
+                    }
+                }
+                ow
             } else {
                 Ownership::Retained
             }

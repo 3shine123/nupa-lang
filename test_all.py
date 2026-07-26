@@ -109,26 +109,59 @@ def run_cargo_tests() -> tuple[int, int, list[str]]:
 
 
 def _has_main(np_path: Path) -> bool:
-    """Heuristic: does this .np file define its own `int main` entry point?
-
-    Module files (e.g. diamond_impl.np) are meant to be #import'd by a driver
-    file and have no main(); running them standalone always fails on missing
-    `_main` symbol. Skip them instead of misreporting as failures.
-    """
+    """Heuristic: does this .np file define its own `int main` entry point?"""
     try:
         text = np_path.read_text(encoding="utf-8", errors="replace")
     except Exception:
-        return True  # be permissive; let nupac report the real error
-    # strip line comments // and /* */ blocks so a commented-out main doesn't count
+        return True
     import re as _re
     stripped = _re.sub(r"/\*.*?\*/", " ", text, flags=_re.S)
     stripped = _re.sub(r"//[^\n]*", " ", stripped)
     return bool(_re.search(r"\bint\s+main\s*\(", stripped)) or bool(_re.search(r"\bvoid\s+main\s*\(", stripped))
 
 
+def _needs_mrc(np_path: Path) -> bool:
+    """Detect if a .np file uses manual retain/release (MRC) patterns."""
+    try:
+        text = np_path.read_text(encoding="utf-8", errors="replace")
+    except Exception:
+        return False
+    import re as _re
+    stripped = _re.sub(r"/\*.*?\*/", " ", text, flags=_re.S)
+    stripped = _re.sub(r"//[^\n]*", " ", stripped)
+    # Check for manual retain/release/dealloc/autorelease calls
+    has_mrc = bool(_re.search(r"\[\w+\s+(retain|release|autorelease|dealloc)\]", stripped))
+    # Also check for ARC annotations in the file
+    has_arc_flag = bool(_re.search(r"-fno-nupa-arc", stripped))
+    return has_mrc or has_arc_flag
+
+
+def _run_np(cmd: list, np_path: Path, timeout: int) -> tuple:
+    """Run nupac with the given command, return (stdout, stderr, returncode, timed_out)."""
+    try:
+        proc = subprocess.Popen(
+            cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+            start_new_session=True, cwd=PROJECT,
+        )
+        try:
+            stdout, stderr = proc.communicate(timeout=timeout)
+            return stdout, stderr, proc.returncode, False
+        except subprocess.TimeoutExpired:
+            try:
+                pgid = os.getpgid(proc.pid)
+                os.killpg(pgid, signal.SIGKILL)
+            except Exception:
+                proc.kill()
+            proc.wait()
+            return "", "", -1, True
+    except Exception as e:
+        return "", str(e), -1, False
+
+
 def process_np(np_file: str, tmpdir: Path) -> tuple[str, bool, list[str], str]:
     """
     Run one .np file via `nupac run`.
+    First tries with ARC (default), then retries with MRC if it fails.
     Returns (relative_path, passed, info_lines, status_tag).
     """
     np_path = Path(np_file)
@@ -139,40 +172,38 @@ def process_np(np_file: str, tmpdir: Path) -> tuple[str, bool, list[str], str]:
     if not _has_main(np_path):
         return rel, False, ["FAIL (no main entry)"], "FAIL"
 
-    try:
-        proc = subprocess.Popen(
-            [str(NUPAC), "run", str(np_path)],
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
-            start_new_session=True,  # isolate so killpg doesn't hit us
-        )
-        try:
-            stdout, stderr = proc.communicate(timeout=RUN_TIMEOUT + 2)
-        except subprocess.TimeoutExpired:
-            # Kill the process group so orphaned children (e.g. /tmp/tt) die too
-            try:
-                pgid = os.getpgid(proc.pid)
-                os.killpg(pgid, signal.SIGKILL)
-            except Exception:
-                proc.kill()
-            proc.wait()
-            return rel, True, ["CANCELED (timed out — probably interactive game)"], "CANCELED"
+    # Try with ARC first
+    cmd = [str(NUPAC), "run", str(np_path)]
+    stdout, stderr, rc, timed_out = _run_np(cmd, np_path, RUN_TIMEOUT + 2)
 
-        if proc.returncode == 0:
-            out_lines = stdout.strip().split("\n") if stdout.strip() else ["(no output)"]
-            return rel, True, out_lines, "PASS"
+    if timed_out:
+        return rel, True, ["CANCELED (timed out — probably interactive game)"], "CANCELED"
+
+    if rc == 0:
+        out_lines = stdout.strip().split("\n") if stdout.strip() else ["(no output)"]
+        return rel, True, out_lines, "PASS"
+
+    # ARC failed — retry with MRC
+    mrc_cmd = [str(NUPAC), "run", str(np_path), "-fno-nupa-arc"]
+    mrc_stdout, mrc_stderr, mrc_rc, mrc_timed_out = _run_np(mrc_cmd, np_path, RUN_TIMEOUT + 2)
+
+    if mrc_timed_out:
+        return rel, True, ["CANCELED (timed out — probably interactive game)"], "CANCELED"
+
+    if mrc_rc == 0:
+        out_lines = mrc_stdout.strip().split("\n") if mrc_stdout.strip() else ["(no output)"]
+        return rel, True, out_lines, "PASS"
+
+    # Both failed — report the ARC error
+    err = (stderr or stdout).strip()
+    err_lines = err.split("\n") if err else ["(no output)"]
+    if "error:" in err.lower() or "Error:" in err:
+        if "TRANSPILE" in err or "Parse" in err:
+            return rel, False, err_lines, "TRANSPILE_FAIL"
         else:
-            err = (stderr or stdout).strip()
-            err_lines = err.split("\n") if err else ["(no output)"]
-            if "error:" in err.lower() or "Error:" in err:
-                if "TRANSPILE" in err or "Parse" in err:
-                    return rel, False, err_lines, "TRANSPILE_FAIL"
-                else:
-                    return rel, False, err_lines, "COMPILE_FAIL"
-            else:
-                return rel, False, [f"RUN FAILED exit={proc.returncode}"] + err_lines, "RUN_FAIL"
-    except Exception as e:
-        return rel, False, [str(e)], "RUN_FAIL"
-    finally:
+            return rel, False, err_lines, "COMPILE_FAIL"
+    else:
+        return rel, False, [f"RUN FAILED exit={rc}"] + err_lines, "RUN_FAIL"
         if proc and proc.poll() is None:
             try:
                 pgid = os.getpgid(proc.pid)

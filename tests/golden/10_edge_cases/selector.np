@@ -12,9 +12,9 @@
 @end
 
 int main() {
-    unsigned s1 = @selector(bar:);
-    unsigned s2 = @selector(bar:);
-    if (s1 == s2) {
+    SEL s1 = @selector(bar:);
+    SEL s2 = @selector(bar:);
+    if (s1.hash == s2.hash) {
         printf("stable\n");
     }
     return 0;

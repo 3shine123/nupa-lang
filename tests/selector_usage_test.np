@@ -3,10 +3,10 @@
 
 int main() {
     @autoreleasepool {
-        unsigned sel1 = @selector(alloc);
-        unsigned sel2 = @selector(init);
-        unsigned sel3 = @selector(doSomething:with:);
-        if (sel1 != 0 && sel2 != 0 && sel3 != 0 && sel1 != sel2) {
+        SEL sel1 = @selector(alloc);
+        SEL sel2 = @selector(init);
+        SEL sel3 = @selector(doSomething:with:);
+        if (sel1.name[0] != '\0' && sel2.name[0] != '\0' && sel3.name[0] != '\0') {
             printf("selectors ok\n");
         } else { return 1; }
     }

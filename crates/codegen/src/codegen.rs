@@ -1222,16 +1222,10 @@ fn convert_expr(ae: &AstExpr, class_infos: &std::collections::BTreeMap<String, C
             let func_name = format!("__nupa_block_{}", tid);
             let rt = return_type.as_ref().map(|t| ast_type_to_c_str(t)).unwrap_or_else(|| "void".into());
             let mut cg_params = Vec::new();
-            if let Some(ref p) = params {
-                let mut bp = Some(&**p);
-                while let Some(param) = bp {
-                    let pt = param.par_type.as_ref()
-                        .map(|t| cst_type_to_c_str(t))
-                        .unwrap_or_else(|| "int".into());
-                    let pn = param.name.clone().unwrap_or_else(|| "_arg".into());
-                    cg_params.push((pt, pn));
-                    bp = param.next.as_ref().map(|n| &**n);
-                }
+            for (pt, pn) in params {
+                let pt_str = ast_type_to_c_str(pt);
+                let pn_str = if pn.is_empty() { "_arg".into() } else { pn.clone() };
+                cg_params.push((pt_str, pn_str));
             }
             let cg_body = body.as_ref().map(|b| Box::new(convert_stmt(b, &class_infos)));
             CgExpr {

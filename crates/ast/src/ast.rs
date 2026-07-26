@@ -98,7 +98,7 @@ pub enum AstExprData {
     Comma(Vec<AstExpr>),
     Subscript { object: Box<AstExpr>, key: Box<AstExpr> },
     Sizeof { type_expr: AstType, expr: Option<Box<AstExpr>> },
-    Block { params: Option<Box<CstParam>>, return_type: Option<Box<AstType>>, body: Option<Box<AstStmt>> },
+    Block { params: Vec<(AstType, String)>, return_type: Option<Box<AstType>>, body: Option<Box<AstStmt>> },
     Ternary { cond: Box<AstExpr>, then: Box<AstExpr>, else_: Box<AstExpr> },
     Selector(String),
 }

@@ -306,7 +306,15 @@ impl Elaborator {
                 AstExpr { kind: AstExprKind::DictLit, expr_type: None, line, col, data: AstExprData::DictLit { keys: keys.iter().filter_map(|k| self.convert_expr(k)).collect(), values: values.iter().filter_map(|v| self.convert_expr(v)).collect() } }
             }
             CstExprData::Block { params, return_type, body, .. } => {
-                AstExpr { kind: AstExprKind::BlockLit, expr_type: None, line, col, data: AstExprData::Block { params: params.clone(), return_type: return_type.as_ref().and_then(|t| self.convert_type(t)).map(Box::new), body: body.as_ref().and_then(|b| self.convert_stmt(b)).map(Box::new) } }
+                let mut ast_params = Vec::new();
+                let mut bp = params.as_ref().map(|p| &**p);
+                while let Some(param) = bp {
+                    let pt = param.par_type.as_ref().and_then(|t| self.convert_type(t)).unwrap_or_else(|| AstType::new(TypePrim::Int));
+                    let pn = param.name.clone().unwrap_or_else(|| String::new());
+                    ast_params.push((pt, pn));
+                    bp = param.next.as_ref().map(|n| &**n);
+                }
+                AstExpr { kind: AstExprKind::BlockLit, expr_type: None, line, col, data: AstExprData::Block { params: ast_params, return_type: return_type.as_ref().and_then(|t| self.convert_type(t)).map(Box::new), body: body.as_ref().and_then(|b| self.convert_stmt(b)).map(Box::new) } }
             }
             CstExprData::InitList(exprs) => {
                 AstExpr { kind: AstExprKind::ArrayLit, expr_type: None, line, col, data: AstExprData::ArrayLit(exprs.iter().filter_map(|e| self.convert_expr(e)).collect()) }
