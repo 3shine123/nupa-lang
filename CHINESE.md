@@ -70,9 +70,37 @@ Nupa 是一门**纯静态**的 Objective-C 方言（C 超集语言）。Nupa 源
 ```bash
 git clone https://github.com/3shine123/nupa-lang.git
 cd nupa-lang
-meson setup builddir
-ninja -C builddir
+cargo build --release
 ```
+
+### 安装
+
+构建完成后，`nupac` 同目录下会自动生成 `install.sh`（以及头文件和 `libnupa.a`）。直接运行它即可安装到系统：
+
+```bash
+# 源码编译后——脚本就在二进制旁边
+cd target/release        # 或 target/debug（如果你跑的是 cargo build）
+./install.sh             # 默认安装到 /opt/nupa
+./install.sh /usr/local  # 可选：换成其他前缀
+```
+
+脚本会安装：
+- **二进制** → `<prefix>/bin/nupac`
+- **静态库** → `<prefix>/lib/libnupa.a`
+- **头文件** → `<prefix>/include/`
+- **系统头文件** → `/usr/local/include/{Foundation,nupa}/`（需写权限；无权限时自动跳过，可用 sudo 重试，或传第二个参数指定目录，如 `./install.sh /opt/nupa ~/include`）
+
+安装脚本会自动检测系统语言（中文 / English）。
+
+或者下载预编译的 Release 压缩包（`nupa-<platform>.tar.gz` 或 `.zip`），解压后运行里面的 `install.sh`：
+
+```bash
+tar xzf nupa-x86_64-unknown-linux-musl.tar.gz
+cd nupa-x86_64-unknown-linux-musl
+./install.sh
+```
+
+> **提示：** 把 `nupac` 加入 PATH 并装好系统头文件后，`<nupa/runtime.h>` 和 `<Foundation/...>` 会自动被找到，无需手动加 `-I include`。
 
 ### 编译一个 Nupa 程序
 
@@ -105,6 +133,39 @@ nupac hello.np -o hello.c   → Error: use -rewrite-nupa to output C code
 # [!] 错误：没有指定任何输出方式
 nupac hello.np              → Error: specify -o or -rewrite-nupa
 ```
+
+### Shell 补全（Tab 自动补全）
+
+`nupac` 自带用 [clap_complete](https://crates.io/crates/clap_complete) 生成的 **zsh / bash / fish** 补全脚本。随时可用以下命令重新生成：
+
+```bash
+nupac --gen-completions zsh > _nupac
+nupac --gen-completions bash > nupac.bash
+nupac --gen-completions fish > nupac.fish
+```
+
+`install.sh` 也会把脚本装进安装包（`share/nupac/completions/`）。
+
+**zsh** —— 把目录加进 `fpath`（必须在 `compinit` 之前）：
+
+```zsh
+fpath=(/opt/nupa/share/nupac/completions $fpath)
+autoload -U compinit && compinit
+```
+
+**bash**：
+
+```bash
+source /opt/nupa/share/nupac/completions/nupac.bash
+```
+
+**fish**：
+
+```fish
+source /opt/nupa/share/nupac/completions/nupac.fish
+```
+
+装完新版本后清一下 zsh 缓存：`rm -f ~/.zcompdump*`，再开新终端。
 
 ### 运行测试
 

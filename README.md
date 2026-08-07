@@ -69,8 +69,37 @@ This is not a production-ready language. It's a toy, exploring the question: "wh
 ```bash
 git clone https://github.com/3shine123/nupa-lang.git
 cd nupa-lang
-cargo build
+cargo build --release
 ```
+
+### Install
+
+The build automatically drops an `install.sh` (plus headers and `libnupa.a`) next to the `nupac` binary. Install it to your system with:
+
+```bash
+# After building from source — the script lives next to the binary
+cd target/release        # or target/debug if you ran a plain `cargo build`
+./install.sh             # installs to /opt/nupa by default
+./install.sh /usr/local  # optional: pick a different prefix
+```
+
+This installs:
+- **binary** → `<prefix>/bin/nupac`
+- **static lib** → `<prefix>/lib/libnupa.a`
+- **headers** → `<prefix>/include/`
+- **system headers** → `/usr/local/include/{Foundation,nupa}/` (needs write permission; skip with `sudo` or pass a second arg like `./install.sh /opt/nupa ~/include`)
+
+The installer auto-detects your language (中文 / English).
+
+Alternatively, download a prebuilt release archive (`nupa-<platform>.tar.gz` or `.zip`) from the releases page, extract it, and run the `install.sh` inside:
+
+```bash
+tar xzf nupa-x86_64-unknown-linux-musl.tar.gz
+cd nupa-x86_64-unknown-linux-musl
+./install.sh
+```
+
+> **Tip:** with `nupac` on your PATH and system headers installed, `<nupa/runtime.h>` and `<Foundation/...>` resolve automatically — no `-I include` needed.
 
 ### Compile a Nupa Program
 
@@ -103,6 +132,40 @@ nupac hello.np -o hello.c   → Error: use --rewrite-nupa to output C code
 # [!] Error: no output method specified
 nupac hello.np              → Error: specify -o or --rewrite-nupa
 ```
+
+### Shell Completion (Tab autocomplete)
+
+`nupac` ships with generated completion scripts for **zsh**, **bash** and **fish**, built with
+[clap_complete](https://crates.io/crates/clap_complete). Regenerate them any time with:
+
+```bash
+nupac --gen-completions zsh > _nupac
+nupac --gen-completions bash > nupac.bash
+nupac --gen-completions fish > nupac.fish
+```
+
+The scripts are also copied into the install bundle (`share/nupac/completions/`) by `install.sh`.
+
+**zsh** — add the directory to `fpath` before `compinit` runs:
+
+```zsh
+fpath=(/opt/nupa/share/nupac/completions $fpath)
+autoload -U compinit && compinit
+```
+
+**bash**:
+
+```bash
+source /opt/nupa/share/nupac/completions/nupac.bash
+```
+
+**fish**:
+
+```fish
+source /opt/nupa/share/nupac/completions/nupac.fish
+```
+
+After installing a new version, clear the zsh cache with `rm -f ~/.zcompdump*` and open a new terminal.
 
 ### Run Tests
 

@@ -1,0 +1,40 @@
+# Print an optspec for argparse to handle cmd's options that are independent of any subcommand.
+function __fish_nupac_global_optspecs
+    string join \n rewrite-nupa= v/verbose= version= fnupa-arc= fno-nupa-arc= fno-checker= fno-libc= o= I= L= S/asm= arch= gen-completions=
+end
+
+function __fish_nupac_needs_command
+    # Figure out if the current invocation already has a command.
+    set -l cmd (commandline -opc)
+    set -e cmd[1]
+    argparse -s (__fish_nupac_global_optspecs) -- $cmd 2>/dev/null
+    or return
+    if set -q argv[1]
+        # Also print the command, so this can be used to figure out what it is.
+        echo $argv[1]
+        return 1
+    end
+    return 0
+end
+
+function __fish_nupac_using_subcommand
+    set -l cmd (__fish_nupac_needs_command)
+    test -z "$cmd"
+    and return 1
+    contains -- $cmd[1] $argv
+end
+
+complete -c nupac -n "__fish_nupac_needs_command" -l rewrite-nupa -d 'transpile to C only (no link)' -r
+complete -c nupac -n "__fish_nupac_needs_command" -s v -l verbose -d 'show verbose transpilation info' -r
+complete -c nupac -n "__fish_nupac_needs_command" -l version -d 'print version and exit' -r
+complete -c nupac -n "__fish_nupac_needs_command" -l fnupa-arc -d 'enable ARC (default)' -r
+complete -c nupac -n "__fish_nupac_needs_command" -l fno-nupa-arc -d 'disable ARC (MRC)' -r
+complete -c nupac -n "__fish_nupac_needs_command" -l fno-checker -d 'skip type checking' -r
+complete -c nupac -n "__fish_nupac_needs_command" -l fno-libc -d 'bare-metal/freestanding output' -r
+complete -c nupac -n "__fish_nupac_needs_command" -s o -d 'output path (binary or .c)' -r
+complete -c nupac -n "__fish_nupac_needs_command" -s I -d 'add include dir' -r
+complete -c nupac -n "__fish_nupac_needs_command" -s L -d 'add lib dir' -r
+complete -c nupac -n "__fish_nupac_needs_command" -s S -l asm -d 'link a real assembly file (repeatable)' -r
+complete -c nupac -n "__fish_nupac_needs_command" -l arch -d 'target arch (e.g. -arch x86_64)' -r
+complete -c nupac -n "__fish_nupac_needs_command" -l gen-completions -d 'generate shell completion script (bash|zsh|fish|powershell|elvish)' -r
+complete -c nupac -n "__fish_nupac_needs_command" -a "run" -d 'compile + run, then delete binary'

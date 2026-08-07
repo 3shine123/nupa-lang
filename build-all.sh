@@ -76,6 +76,9 @@ for t in "${TARGETS[@]}"; do
     # 拷贝 install.sh
     cp install-pkg.sh "$out/install.sh"
     chmod +x "$out/install.sh"
+    # 拷贝 shell 补全脚本
+    mkdir -p "$out/completions"
+    cp -r completions/. "$out/completions/"
 done
 
 # ── 产物汇总 ──
@@ -124,13 +127,14 @@ for t in "${TARGETS[@]}"; do
     staging="target/pack/$name"
     rm -rf "$staging"
     mkdir -p "$staging"
-    # 只打包必要内容：二进制 + install.sh + 静态库 + 头文件
+    # 只打包必要内容：二进制 + install.sh + 静态库 + 头文件 + 补全脚本
     if [ "$exe" = "1" ]; then binname="nupac.exe"; else binname="nupac"; fi
     cp "$out/$binname" "$staging/$binname"
     cp "$out/install.sh" "$staging/"
     chmod +x "$staging/install.sh"
     [ -f "$out/libnupa.a" ] && cp "$out/libnupa.a" "$staging/"
     cp -r "$out/include" "$staging/include"
+    [ -d "$out/completions" ] && cp -r "$out/completions" "$staging/completions"
     find "$staging" -name ".DS_Store" -delete
 
     if [ "$exe" = "1" ]; then
