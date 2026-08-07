@@ -47,13 +47,12 @@ This is not a production-ready language. It's a toy, exploring the question: "wh
 
 `examples/`
 
-| Project                    | Description                                                                              | Run                                                 |
-| -------------------------- | ---------------------------------------------------------------------------------------- | --------------------------------------------------- |
-| **`04_soma-kernel/`**      | Tiny 32‑bit i386 OS kernel (NASM + C + Nupa), bare‑metal `-fno-libc` mode                | `./run.sh` or `./run.sh --gui`                      |
-| **`03_LibUI/`**            | GUI app via [libui-ng](https://github.com/libui-ng/libui-ng), all callbacks in pure Nupa | `./run_libui.sh`                                    |
-| **`02_ncurses/`**          | Terminal demos (`ncurses_demo`, `sysmon`) using `Terminal::Ncurses`                      | `make run`                                          |
-| **`01_JSONEditor/`**       | Multi‑file JSON editor with split‑screen terminal preview                                | `nupac run json_editor.np`                          |
-| **`26_baremetal_stress/`** | 14‑check bare‑metal stress test (inheritance, protocols, exceptions, recursion, …)       | `./build.sh` in `tests/golden/26_baremetal_stress/` |
+| Project               | Description                                                                              | Run                            |
+| --------------------- | ---------------------------------------------------------------------------------------- | ------------------------------ |
+| **`04_soma-kernel/`** | Tiny 32‑bit i386 OS kernel (NASM + C + Nupa), bare‑metal `-fno-libc` mode                | `./run.sh` or `./run.sh --gui` |
+| **`03_LibUI/`**       | GUI app via [libui-ng](https://github.com/libui-ng/libui-ng), all callbacks in pure Nupa | `./run_libui.sh`               |
+| **`02_ncurses/`**     | Terminal demos (`ncurses_demo`, `sysmon`) using `Terminal::Ncurses`                      | `make run`                     |
+| **`01_JSONEditor/`**  | Multi‑file JSON editor with split‑screen terminal preview                                | `nupac run json_editor.np`     |
 
 ---
 
