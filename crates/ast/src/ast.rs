@@ -8,6 +8,7 @@ pub struct AstType {
     pub is_pointer: bool,
     pub is_const: bool,
     pub is_block: bool,
+    pub is_fn_ptr: bool,
     pub is_array: bool,
     pub is_struct: bool,
     pub is_unsigned: bool,
@@ -32,7 +33,7 @@ impl AstType {
     pub fn new(prim: TypePrim) -> Self {
         AstType {
             prim, is_pointer: false, is_const: false, is_block: false,
-            is_array: false, is_struct: false, is_unsigned: false, array_size: 0,
+            is_fn_ptr: false, is_array: false, is_struct: false, is_unsigned: false, array_size: 0,
             subtype: None, block_params: None, block_name: None, next: None,
             type_args: Vec::new(), name: None,
             class_ref: None, protocol_ref: None, protocol_refs: Vec::new(),
@@ -45,7 +46,7 @@ impl AstType {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AstExprKind {
-    Int, Float, Char, String, Bool,
+    Int, Float, Char, String, AtString, Bool,
     Nil, Null, Self_, Super, Selector,
     VarRef, IvarRef, PropRef,
     MsgSend, FuncCall,
@@ -69,6 +70,7 @@ pub enum AstExprData {
     Float(f64),
     Char(u8),
     String(String),
+    AtString(String),
     Bool(bool),
     VarRef { sym: Option<String>, name: String },
     IvarRef { ivar: Option<String>, cls: Option<String>, obj: Box<AstExpr> },
@@ -111,7 +113,7 @@ pub enum AstStmtKind {
     While, Do, For, ForIn,
     Break, Continue, Return, Goto, Label,
     Throw, Try, Catch, Finally,
-    Synchronized, Autoreleasepool, Decl,
+    Synchronized, Autoreleasepool, Decl, Asm,
 }
 
 #[derive(Debug, Clone)]
@@ -143,7 +145,23 @@ pub enum AstStmtData {
     Finally(Box<AstStmt>),
     Synchronized { lock: Box<AstExpr>, body: Box<AstStmt> },
     Autoreleasepool(Box<AstStmt>),
+    Asm {
+        is_volatile: bool,
+        is_goto: bool,
+        template: String,
+        outputs: Vec<AstAsmOperand>,
+        inputs: Vec<AstAsmOperand>,
+        clobbers: Vec<String>,
+        labels: Vec<String>,
+    },
     Decl(AstDecl),
+}
+
+#[derive(Debug, Clone)]
+pub struct AstAsmOperand {
+    pub name: Option<String>,
+    pub constraint: String,
+    pub expr: AstExpr,
 }
 
 // ─── Declaration kinds ───────────────────────────────────────────────────────
@@ -152,7 +170,7 @@ pub enum AstStmtData {
 pub enum AstDeclKind {
     Class, Method, Ivar, Property,
     Function, Variable, Protocol,
-    Typedef, Struct, Union, Enum, Namespace,
+    Typedef, Struct, Union, Enum, Namespace, Asm,
 }
 
 #[derive(Debug, Clone)]
@@ -173,6 +191,7 @@ pub struct AstDecl {
          ivars: Vec<AstDecl>,
          properties: Vec<AstDecl>,
          impl_vars: Vec<AstDecl>,
+         is_implementation: bool,
      },
      Method {
          method_sym: Option<String>,
@@ -181,10 +200,11 @@ pub struct AstDecl {
          params: Option<Box<CstParam>>,
          body: Option<Box<AstStmt>>,
      },
-     Ivar {
-         ivar_sym: Option<String>,
-         ivar_type: Option<Box<AstType>>,
-     },
+Ivar {
+          ivar_sym: Option<String>,
+          ivar_type: Option<Box<AstType>>,
+          is_weak: bool,
+      },
      Property {
          prop_sym: Option<String>,
          prop_type: Option<Box<AstType>>,
@@ -226,6 +246,15 @@ pub struct AstDecl {
         values: Vec<AstExpr>,
     },
     Namespace(Vec<AstDecl>),
+    Asm {
+        is_volatile: bool,
+        is_goto: bool,
+        template: String,
+        outputs: Vec<AstAsmOperand>,
+        inputs: Vec<AstAsmOperand>,
+        clobbers: Vec<String>,
+        labels: Vec<String>,
+    },
 }
 
 // ─── Translation unit ───────────────────────────────────────────────────────

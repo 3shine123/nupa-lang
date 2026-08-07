@@ -1,0 +1,99 @@
+#ifndef LIBUI_NH
+#define LIBUI_NH
+
+#include <ui.h>
+#import <Foundation/Foundation.nh>
+
+@namespace LibUI {
+
+    @interface Window : NPObject {
+        @public
+        struct uiWindow *_handle;
+    }
+        + (Window *)withTitle:(const char *)title width:(int)w height:(int)h;
+        - (void)show;
+        + (void)activate;
+        - (void)onClosingQuit;
+        - (void)setChild:(struct uiControl *)child;
+        - (struct uiWindow *)handle;
+    @end
+
+    @interface Box : NPObject {
+        @public
+        struct uiBox *_handle;
+    }
+        + (Box *)vertical;
+        + (Box *)horizontal;
+        - (void)append:(struct uiControl *)child stretch:(int)stretch;
+        - (struct uiBox *)handle;
+    @end
+
+    @interface Button : NPObject {
+        @public
+        struct uiButton *_handle;
+        void *_cbData;
+    }
+        + (Button *)withText:(const char *)text;
+        - (void)onClicked:(void *)cb data:(void *)data;
+        - (struct uiButton *)handle;
+    @end
+
+    @interface Label : NPObject {
+        @public
+        struct uiLabel *_handle;
+    }
+        + (Label *)withText:(const char *)text;
+        - (void)setText:(const char *)text;
+        - (struct uiLabel *)handle;
+    @end
+
+    @interface Entry : NPObject {
+        @public
+        struct uiEntry *_handle;
+    }
+        + (Entry *)create;
+        - (const char *)text;
+        - (void)setText:(const char *)text;
+        - (struct uiEntry *)handle;
+    @end
+
+    @interface MultilineEntry : NPObject {
+        @public
+        struct uiMultilineEntry *_handle;
+    }
+        + (MultilineEntry *)create;
+        - (const char *)text;
+        - (void)setText:(const char *)text;
+        - (struct uiMultilineEntry *)handle;
+    @end
+
+    @interface Separator : NPObject {
+        @public
+        struct uiSeparator *_handle;
+    }
+        + (Separator *)horizontal;
+        + (Separator *)vertical;
+        - (struct uiSeparator *)handle;
+    @end
+
+    @interface Group : NPObject {
+        @public
+        struct uiGroup *_handle;
+    }
+        + (Group *)withTitle:(const char *)title;
+        - (void)setChild:(struct uiControl *)child;
+        - (struct uiGroup *)handle;
+    @end
+
+    @interface Tab : NPObject {
+        @public
+        struct uiTab *_handle;
+    }
+        + (Tab *)create;
+        - (void)append:(const char *)name child:(struct uiControl *)child;
+        - (struct uiTab *)handle;
+    @end
+
+} // @namespace LibUI
+
+#endif

@@ -1,0 +1,30 @@
+# System Monitor
+# Run: make run
+
+NUPAC = ../../target/debug/nupac
+NCURSES = /opt/homebrew/opt/ncurses
+
+all: sysmon
+
+sysmon.c: sysmon.np
+	$(NUPAC) -rewrite-nupa sysmon.np -o sysmon.c -fno-nupa-arc
+
+sysmon: sysmon.c
+	clang -std=c99 -fblocks \
+		-I ../../include -I ../../include/Foundation -I ../../include/Terminal \
+		-I $(NCURSES)/include \
+		sysmon.c \
+		../../include/nupa/runtime.c \
+		../../include/Terminal/ncurses_mouse.c \
+		../../include/Terminal/sysinfo.c \
+		$(NCURSES)/lib/libncurses.dylib \
+		-Wl,-rpath,$(NCURSES)/lib \
+		-o sysmon -w
+
+run: sysmon
+	./sysmon
+
+clean:
+	rm -f sysmon.c sysmon
+
+.PHONY: all run clean

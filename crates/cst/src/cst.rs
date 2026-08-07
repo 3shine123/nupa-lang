@@ -18,6 +18,7 @@ pub struct CstType {
     pub is_block: bool,
     pub is_array: bool,
     pub is_struct: bool,
+    pub is_fn_ptr: bool,
     pub is_block_qual: bool,
     pub is_weak_qual: bool,
     pub is_unsigned: bool,
@@ -41,6 +42,7 @@ impl CstType {
             prim,
             is_pointer: false, is_const: false, is_volatile: false,
             is_block: false, is_array: false, is_struct: false,
+            is_fn_ptr: false,
             is_block_qual: false, is_weak_qual: false, is_unsigned: false,
             array_size: 0,
             subtype: None, name: None, block_name: None,
@@ -54,7 +56,7 @@ impl CstType {
 // Expression kinds
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CstExprKind {
-    Ident, Integer, Float, String, Char, Bool,
+    Ident, Integer, Float, String, AtString, Char, Bool,
     Nil, Null, Self_, Super, Cmd,
     Selector, Encode, Protocol,
     ArrayLit, DictLit, NumberLit,
@@ -72,7 +74,7 @@ pub enum CstStmtKind {
     While, Do, For, ForIn,
     Break, Continue, Return, Goto, Label,
     Try, Catch, Finally, Throw,
-    Synchronized, Autoreleasepool, Decl,
+    Synchronized, Autoreleasepool, Decl, Asm,
 }
 
 // Declaration kinds
@@ -84,7 +86,7 @@ pub enum CstDeclKind {
     CategoryInterface, CategoryImplementation,
     Protocol, ForwardClass, ForwardProtocol,
     Method, Property, Ivar, IvarList,
-    Namespace, Using,
+    Namespace, Using, Asm,
 }
 
 // Parameter
@@ -112,6 +114,7 @@ pub enum CstExprData {
     Integer(i64),
     Float(f64),
     String(String),
+    AtString(String),
     Char(u8),
     Bool(bool),
     Message {
@@ -248,7 +251,23 @@ pub enum CstStmtData {
         body: Box<CstStmt>,
     },
     Autoreleasepool(Box<CstStmt>),
+    Asm {
+        is_volatile: bool,
+        is_goto: bool,
+        template: String,
+        outputs: Vec<CstAsmOperand>,
+        inputs: Vec<CstAsmOperand>,
+        clobbers: Vec<String>,
+        labels: Vec<String>,
+    },
     Decl(CstDecl),
+}
+
+#[derive(Debug, Clone)]
+pub struct CstAsmOperand {
+    pub name: Option<String>,
+    pub constraint: String,
+    pub expr: Box<CstExpr>,
 }
 
 // Declaration node
@@ -322,6 +341,7 @@ pub enum CstDeclData {
     Ivar {
         ivar_type: Option<Box<CstType>>,
         iboutlet: bool,
+        is_weak: bool,
     },
     Method {
         is_class_method: bool,
@@ -333,6 +353,15 @@ pub enum CstDeclData {
     Using {
         fqn: String,
         alias: Option<String>,
+    },
+    Asm {
+        is_volatile: bool,
+        is_goto: bool,
+        template: String,
+        outputs: Vec<CstAsmOperand>,
+        inputs: Vec<CstAsmOperand>,
+        clobbers: Vec<String>,
+        labels: Vec<String>,
     },
 }
 

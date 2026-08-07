@@ -15,7 +15,29 @@
 08_categories/      分类（命名分类、扩展）
 09_blocks/          Block 语法（字面量、变量捕获）
 10_edge_cases/      边界情况（nil、instancetype、@class、@selector 等）
+22_c_superset/       C 超集语法（struct、C 风格 cast、函数指针）
+23_asm/              Inline asm（extended asm、命名操作数、asm goto）
+24_asm_fusion/       asm 融合压测（内联+外部 asm × 类/协议/Block/异常/struct/fn-ptr）
 ```
+
+> x86_64 汇编是跨架构用例，不放入默认 arm64 测试套件，单独位于 `asm_x64/`（见下文）。
+
+## x86_64 / Rosetta 测试
+
+在 arm64 Mac 上通过 Rosetta 运行 x86_64 汇编：
+
+```bash
+nupac -arch x86_64 run -asm asm_x64/asm_x86_ext.s asm_x64/asm_x86_fusion_test.np
+# 或
+./asm_x64/build.sh
+```
+
+要点：
+- 使用系统原生的 `/usr/bin/arch`（不是 uutils 的 `arch`，后者没有 `-x86_64` 切换能力）。
+- 未安装 Rosetta 时先 `softwareupdate --install-rosetta --agree-to-license`。
+- `-arch x86_64` 让 clang 交叉产出 x86_64 Mach-O，执行时被 Rosetta 自动翻译。
+- x86_64 内联 asm 用 `%r` 即可（32 位操作数直接用 eax 等），无需 ARM64 的 `%w` 修饰符。
+- Rosetta 安装后若立即报 "Bad CPU type in executable"，等 oahd 激活后重试。
 
 ## 运行方式
 

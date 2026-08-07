@@ -256,7 +256,7 @@ nupa_autoreleasepool_t * __nupa_pool = nupa_autoreleasepool_push();
 nupa_autoreleasepool_pop(__nupa_pool);
 ```
 
-### 6.5 `super` 调用
+### 6.5 `super` 调用
 
 - 直接通过**父类 vtable 实例**调用，不走虚派发：
   
@@ -266,7 +266,19 @@ nupa_autoreleasepool_pop(__nupa_pool);
   self = (&nupa_NPObject_vtable_inst)->init(self, __nupa_sel_init);
   ```
 
-### 6.6 点语法（属性访问）
+### 6.6 `@"..."` 字符串字面量
+
+- `@"..."` 是 Nupa 字符串字面量，生成 `nupa_string_from_cstr("...")` 调用，返回 `NPObject *`。
+  
+  c
+  
+  ```c
+  NPObject *s = nupa_string_from_cstr("hello");
+  ```
+
+- 与 C 字符串字面量 `"..."`（类型为 `char *`）严格区分，两者不可混用。
+
+### 6.7 点语法（属性访问）
 
 - 如果属性有已知 ivar 且是 `readonly` 或简单访问，直接内联为 `self->ivar`。
 

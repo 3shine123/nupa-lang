@@ -18,6 +18,7 @@ nupac
 .mimocode/
 .opencode/
 .cache/
+__pycache__/
 *.swp
 *.swo
 *~

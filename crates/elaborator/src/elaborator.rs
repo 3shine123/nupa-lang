@@ -91,6 +91,7 @@ impl Elaborator {
     fn convert_type(&mut self, ct: &CstType) -> Option<AstType> {
         let mut at = AstType::new(ct.prim);
         at.is_pointer = ct.is_pointer; at.is_const = ct.is_const; at.is_block = ct.is_block;
+        at.is_fn_ptr = ct.is_fn_ptr;
         at.is_unsigned = ct.is_unsigned;
         at.is_array = ct.is_array; at.is_struct = ct.is_struct; at.array_size = ct.array_size;
         at.array_size_name = ct.array_size_name.clone();
@@ -142,6 +143,7 @@ impl Elaborator {
             CstExprData::Integer(val) => AstExpr { kind: AstExprKind::Int, expr_type: None, line, col, data: AstExprData::Int(*val) },
             CstExprData::Float(val) => AstExpr { kind: AstExprKind::Float, expr_type: None, line, col, data: AstExprData::Float(*val) },
             CstExprData::String(s) => AstExpr { kind: AstExprKind::String, expr_type: None, line, col, data: AstExprData::String(s.clone()) },
+            CstExprData::AtString(s) => AstExpr { kind: AstExprKind::AtString, expr_type: None, line, col, data: AstExprData::AtString(s.clone()) },
             CstExprData::Char(val) => AstExpr { kind: AstExprKind::Char, expr_type: None, line, col, data: AstExprData::Char(*val) },
             CstExprData::Bool(val) => AstExpr { kind: AstExprKind::Bool, expr_type: None, line, col, data: AstExprData::Bool(*val) },
             CstExprData::Ident(name) => {
@@ -533,6 +535,16 @@ impl Elaborator {
             CstStmtData::Autoreleasepool(body) => {
                 AstStmt { kind: AstStmtKind::Autoreleasepool, line, col, data: AstStmtData::Autoreleasepool(Box::new(self.convert_stmt(body).unwrap_or_else(make_compound_stmt))) }
             }
+            CstStmtData::Asm { is_volatile, is_goto, template, outputs, inputs, clobbers, labels } => {
+                let mut conv = |ops: &Vec<CstAsmOperand>| -> Vec<AstAsmOperand> {
+                    ops.iter().map(|op| AstAsmOperand {
+                        name: op.name.clone(),
+                        constraint: op.constraint.clone(),
+                        expr: self.convert_expr(&op.expr).unwrap_or_else(make_int_expr),
+                    }).collect()
+                };
+                AstStmt { kind: AstStmtKind::Asm, line, col, data: AstStmtData::Asm { is_volatile: *is_volatile, is_goto: *is_goto, template: template.clone(), outputs: conv(outputs), inputs: conv(inputs), clobbers: clobbers.clone(), labels: labels.clone() } }
+            }
             CstStmtData::Decl(cd) => {
                 if let Some(ad) = self.convert_decl(cd) {
                     AstStmt { kind: AstStmtKind::Decl, line, col, data: AstStmtData::Decl(ad) }
@@ -613,7 +625,7 @@ impl Elaborator {
                         cur = np.next.as_ref().map(|n| n.as_ref());
                     }
                 }
-                let mut ad = AstDecl { kind: AstDeclKind::Class, line, col, name: Some(self.ns_fqn(cd.name.as_deref().unwrap_or(""))), data: AstDeclData::Class { cls_sym: cls_sym_clone, super_name: sup_name, methods: methods.iter().filter_map(|m| self.convert_decl(m)).collect(), ivars: ivars.iter().filter_map(|iv| self.convert_decl(iv)).collect(), properties: all_properties.iter().filter_map(|p| self.convert_decl(p)).collect(), impl_vars: impl_vars.iter().filter_map(|v| self.convert_decl(v)).collect() } };
+                let mut ad = AstDecl { kind: AstDeclKind::Class, line, col, name: Some(self.ns_fqn(cd.name.as_deref().unwrap_or(""))), data: AstDeclData::Class { cls_sym: cls_sym_clone, super_name: sup_name, methods: methods.iter().filter_map(|m| self.convert_decl(m)).collect(), ivars: ivars.iter().filter_map(|iv| self.convert_decl(iv)).collect(), properties: all_properties.iter().filter_map(|p| self.convert_decl(p)).collect(), impl_vars: impl_vars.iter().filter_map(|v| self.convert_decl(v)).collect(), is_implementation: cd.kind == CstDeclKind::ClassImplementation || cd.kind == CstDeclKind::CategoryImplementation } };
                 if let AstDeclData::Class { ref mut methods, .. } = ad.data {
                     if let Some(ref st) = self.symtab {
                         if let Some(ref cls_name) = cls_sym {
@@ -653,9 +665,9 @@ impl Elaborator {
                 }
                 AstDecl { kind: AstDeclKind::Method, line, col, name: cd.name.clone(), data: AstDeclData::Method { method_sym: None, is_class_method: *is_class_method, return_type: return_type.as_ref().and_then(|t| self.convert_type(t)).map(Box::new), params: resolved_params, body: body.as_ref().and_then(|b| self.convert_stmt(b)).map(Box::new) } }
             }
-            CstDeclData::Ivar { ivar_type, .. } => {
+            CstDeclData::Ivar { ivar_type, is_weak, .. } => {
                 let ivar_sym = cd.name.as_ref().and_then(|n| self.symtab.as_ref()?.lookup(n)).map(|s| s.name.clone());
-                AstDecl { kind: AstDeclKind::Ivar, line, col, name: cd.name.clone(), data: AstDeclData::Ivar { ivar_sym, ivar_type: ivar_type.as_ref().and_then(|t| self.convert_type(t)).map(Box::new) } }
+                AstDecl { kind: AstDeclKind::Ivar, line, col, name: cd.name.clone(), data: AstDeclData::Ivar { ivar_sym, ivar_type: ivar_type.as_ref().and_then(|t| self.convert_type(t)).map(Box::new), is_weak: *is_weak } }
             }
             CstDeclData::Property { prop_type, getter, setter, is_readonly, is_weak, is_assign, is_retain, is_copy, is_nonatomic, is_dynamic, .. } => {
                 let prop_sym = cd.name.as_ref().and_then(|n| self.symtab.as_ref()?.lookup(n)).map(|s| s.name.clone());
@@ -692,6 +704,16 @@ impl Elaborator {
                 if ast_decls.len() == 1 { return Some(ast_decls.into_iter().next().unwrap()); }
                 else if ast_decls.is_empty() { return None; }
                 AstDecl { kind: AstDeclKind::Namespace, line, col, name: None, data: AstDeclData::Namespace(ast_decls) }
+            }
+            CstDeclData::Asm { is_volatile, is_goto, template, outputs, inputs, clobbers, labels } => {
+                let mut conv = |ops: &Vec<CstAsmOperand>| -> Vec<AstAsmOperand> {
+                    ops.iter().map(|op| AstAsmOperand {
+                        name: op.name.clone(),
+                        constraint: op.constraint.clone(),
+                        expr: self.convert_expr(&op.expr).unwrap_or_else(make_int_expr),
+                    }).collect()
+                };
+                AstDecl { kind: AstDeclKind::Asm, line, col, name: cd.name.clone(), data: AstDeclData::Asm { is_volatile: *is_volatile, is_goto: *is_goto, template: template.clone(), outputs: conv(outputs), inputs: conv(inputs), clobbers: clobbers.clone(), labels: labels.clone() } }
             }
             CstDeclData::Forward(_) => return None,
             CstDeclData::ProtocolData { .. } => return None,

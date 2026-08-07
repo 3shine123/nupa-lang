@@ -5,8 +5,13 @@
 
 // ─── Exception globals ────────────────────────────────────────────────────────
 
+#ifdef __NUPA_FREESTANDING
+jmp_buf __nupa_exception_buf;
+id      __nupa_exception_value;
+#else
 __thread jmp_buf __nupa_exception_buf;
-__thread id __nupa_exception_value;
+__thread id     __nupa_exception_value;
+#endif
 
 // ─── Weak reference side table ───────────────────────────────────────────────
 
@@ -158,6 +163,11 @@ nupa_autoreleasepool_t *nupa_autoreleasepool_push(void) {
 void nupa_autoreleasepool_pop(nupa_autoreleasepool_t *pool) {
     free(pool);
 }
+
+// ─── String literals ──────────────────────────────────────────────────────────
+// nupa_string_from_cstr is emitted by the codegen in the generated C code.
+// The runtime.h declaration is used by the generated code to call it.
+// When NPString is not present, @"..." falls back to a regular C string literal.
 
 // ─── Logging ─────────────────────────────────────────────────────────────────
 

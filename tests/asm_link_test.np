@@ -1,0 +1,12 @@
+#include <stdio.h>
+
+extern int asm_square(int x);
+extern int asm_add3(int a, int b, int c);
+
+int main() {
+    int sq = asm_square(9);
+    printf("asm_square(9)=%d\n", sq);
+    int sum = asm_add3(1, 2, 3);
+    printf("asm_add3(1,2,3)=%d\n", sum);
+    return 0;
+}

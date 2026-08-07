@@ -102,6 +102,11 @@ const KW_TABLE: &[(&str, KeywordKind)] = &[
     ("#else", KeywordKind::Else),
     ("#elif", KeywordKind::Elif),
     ("#undef", KeywordKind::Undef),
+    ("asm", KeywordKind::Asm),
+    ("__asm", KeywordKind::Asm),
+    ("__asm__", KeywordKind::Asm),
+    ("__volatile", KeywordKind::Volatile),
+    ("__volatile__", KeywordKind::Volatile),
 ];
 
 fn lookup_keyword(s: &str) -> KeywordKind {
@@ -256,6 +261,29 @@ impl<'a> Lexer<'a> {
         }
     }
 
+    fn read_at_string(&mut self, _start: usize) -> Token {
+        let start = self.pos;
+        while self.pos < self.source.len() && self.source.as_bytes()[self.pos] != b'"' {
+            if self.source.as_bytes()[self.pos] == b'\\' {
+                self.advance();
+            }
+            self.advance();
+        }
+        let end = self.pos;
+        if self.pos < self.source.len() {
+            self.advance();
+        }
+        Token {
+            kind: TokenKind::AtString,
+            keyword: KeywordKind::None,
+            start,
+            length: end - start,
+            line: self.line,
+            column: self.column.saturating_sub(end - start + 1),
+            char_val: 0,
+        }
+    }
+
     pub fn next_token(&mut self) -> Token {
         self.skip_whitespace();
 
@@ -294,7 +322,7 @@ impl<'a> Lexer<'a> {
             match self.peek() {
                 Some(b'"') => {
                     self.advance();
-                    return self.read_string(start + 1);
+                    return self.read_at_string(start + 1);
                 }
                 Some(b'[') => {
                     return Token {
@@ -466,12 +494,14 @@ impl<'a> Lexer<'a> {
                     }
                     Some(b'u') | Some(b'U') | Some(b'l') | Some(b'L') => {
                         self.advance();
-                        break;
+                        let end = self.pos;
+                        return self.make_token(TokenKind::Integer, start, end - start - 1, KeywordKind::None);
                     }
                     Some(b'f') | Some(b'F') => {
                         is_float = true;
                         self.advance();
-                        break;
+                        let end = self.pos;
+                        return self.make_token(TokenKind::Float, start, end - start, KeywordKind::None);
                     }
                     _ => break,
                 }
@@ -683,7 +713,7 @@ mod tests {
     fn test_at_string() {
         let mut l = Lexer::new(r#"@"test""#);
         let t = l.next_token();
-        assert_eq!(t.kind, TokenKind::String);
+        assert_eq!(t.kind, TokenKind::AtString);
         assert_eq!(t.text(r#"@"test""#), "test");
     }
 

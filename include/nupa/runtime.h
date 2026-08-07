@@ -1,14 +1,33 @@
 #ifndef NUPA_RUNTIME_H
 #define NUPA_RUNTIME_H
 
+/*
+ * Nupa runtime header.
+ *
+ * Two modes:
+ *   default               — host/OS mode: pulls in libc <setjmp.h>/<stdarg.h>,
+ *                           exception state is thread-local (__thread).
+ *   __NUPA_FREESTANDING   — bare-metal mode (set by `nupac -fno-libc`):
+ *                           no libc headers; setjmp/longjmp map to Clang
+ *                           builtins; exception state is plain globals
+ *                           (single-core assumption). The user supplies
+ *                           <stdint.h>/<stddef.h>/<stdbool.h> (freestanding).
+ */
+
 #include <stdint.h>
 #include <stddef.h>
+#include <stdbool.h>
+
+#ifdef __NUPA_FREESTANDING
+typedef void *jmp_buf[16];
+#define setjmp(env)         __builtin_setjmp(env)
+#define longjmp(env, val)   __builtin_longjmp((env), (val))
+#else
 #include <stdarg.h>
 #include <setjmp.h>
+#endif
 
 // ─── Public types (used by generated code) ─────────────────────────────────────
-
-#include <stdbool.h>
 
 typedef bool Bool;
 typedef int BOOL;
@@ -23,9 +42,21 @@ typedef struct {
 typedef struct NPClass NPClass;
 typedef struct __nupa_root __nupa_root;
 typedef struct NPObject NPObject;
-typedef struct NPProtocol NPProtocol;
 typedef NPObject *id;
 typedef NPObject *nupa_id_t;
+
+/* Always declared: the transpiler's nupa_meta_init() references it.
+ * Definition comes from the user (freestanding) or Foundation (host). */
+extern NPClass nupa___nupa_root_class;
+
+/* memcpy is used by the @try/@catch @finally jmp_buf save/restore
+ * (the generated code always calls memcpy for nesting save/restore).
+ * Guard against macOS's fortified memcpy macro. */
+#ifndef memcpy
+void *memcpy(void *dst, const void *src, size_t n);
+#endif
+
+#ifdef __NUPA_FREESTANDING
 
 #ifndef __NUPA_ROOT_DEFINED
 #define __NUPA_ROOT_DEFINED
@@ -34,6 +65,8 @@ struct __nupa_root {
     uint32_t retain_count;
 };
 #endif
+
+#endif /* end of __NUPA_FREESTANDING guarded structs */
 
 #ifndef NPOBJECT_DEFINED
 #define NPOBJECT_DEFINED
@@ -98,9 +131,22 @@ struct np_object {
 
 SEL sel_registerName(const char *name);
 
-// Exception globals (TLS for thread safety)
+/* Memory allocator (user-provided in freestanding; libc calloc/free on host).
+ * nupa_malloc must zero-initialize memory. */
+void *nupa_malloc(size_t size);
+void  nupa_free(void *ptr);
+
+NPObject *nupa_alloc(NPClass *cls);
+NPObject *nupa_init(NPObject *self);
+
+// Exception globals (TLS for thread safety; plain globals in freestanding)
+#ifdef __NUPA_FREESTANDING
+extern jmp_buf __nupa_exception_buf;
+extern id     __nupa_exception_value;
+#else
 extern __thread jmp_buf __nupa_exception_buf;
-extern __thread id __nupa_exception_value;
+extern __thread id     __nupa_exception_value;
+#endif
 
 NPObject *nupa_retain(NPObject *obj);
 void nupa_release(NPObject *obj);
@@ -129,7 +175,9 @@ void np_object_dealloc(np_object_t *obj);
 // ─── Logging (like NSLog / NSObjCRuntime.h) ───────────────────────────────────
 
 void NPLog(const char *format, ...);
+#ifndef __NUPA_FREESTANDING
 void __NPLogv(const char *format, va_list args);
+#endif
 
 // ─── Block runtime (Clang Blocks ABI) ─────────────────────────────────────────
 
@@ -141,6 +189,10 @@ void _Block_release(const void *aBlock);
 void nupa_weak_register(NPObject **weak_loc, NPObject *target);
 void nupa_weak_unregister(NPObject **weak_loc);
 void nupa_weak_clear_all(NPObject *target);
+
+// ─── String literals ──────────────────────────────────────────────────────────
+
+NPObject *nupa_string_from_cstr(const char *cstr);
 void nupa_weak_auto_cleanup(void *ptr);
 
 // ─── helpers ──────────────────────────────────────────────────────────────────

@@ -53,8 +53,16 @@ fn is_scope_stmt(s: &AstStmt) -> bool {
     )
 }
 
-// Insert releases before a statement at index `pos`, skipping any variable
-// that is being returned/thrown. Returns the number of releases inserted.
+fn var_ref_expr(name: &str) -> AstExpr {
+    AstExpr {
+        kind: AstExprKind::VarRef, expr_type: None, line: 0, col: 0,
+        data: AstExprData::VarRef { sym: None, name: name.to_string() },
+    }
+}
+
+// Insert releases before a statement at index `pos`, skipping any variable that
+// is being returned/thrown. `vars` is drained (released vars removed). Returns
+// the number of releases inserted.
 fn extract_returned_var(e: &AstExpr) -> Option<&str> {
     match &e.data {
         AstExprData::VarRef { name, .. } => Some(name.as_str()),
@@ -77,32 +85,40 @@ fn insert_releases_before(stmts: &mut Vec<AstStmt>, pos: usize, vars: &mut Vec<S
             vars.remove(i);
             continue;
         }
-        let var_ref = AstExpr {
-            kind: AstExprKind::VarRef, expr_type: None, line: 0, col: 0,
-            data: AstExprData::VarRef { sym: None, name: name.clone() },
-        };
-        stmts.insert(pos, make_release_stmt(&var_ref));
+        stmts.insert(pos, make_release_stmt(&var_ref_expr(&name)));
         vars.remove(i);
         count += 1;
     }
     count
 }
 
-// Insert releases at the end of the statement list
-fn insert_releases_at_end(stmts: &mut Vec<AstStmt>, vars: &[String]) {
-    for name in vars {
-        let var_ref = AstExpr {
-            kind: AstExprKind::VarRef, expr_type: None, line: 0, col: 0,
-            data: AstExprData::VarRef { sym: None, name: name.clone() },
-        };
-        stmts.push(make_release_stmt(&var_ref));
-    }
-}
-
 // ─── local analysis (directly inserts releases into AST) ───────────────────
 
+// One scope frame on the analysis stack. `vars` are retained object locals
+// declared in this scope; `inside_loop` marks a loop body so that break/continue
+// only release variables declared within the loop (not its enclosing scopes).
+struct Scope {
+    vars: Vec<String>,
+    inside_loop: bool,
+}
+
+impl Scope {
+    fn new(inside_loop: bool) -> Self { Scope { vars: Vec::new(), inside_loop } }
+}
+
+// Collect all live vars in scopes `stack[from..]` (deduped, top-level last).
+fn collect_vars(stack: &[Scope], from: usize) -> Vec<String> {
+    let mut v: Vec<String> = Vec::new();
+    for s in stack[from.min(stack.len())..].iter() {
+        for n in s.vars.iter() {
+            if !v.contains(n) { v.push(n.clone()); }
+        }
+    }
+    v
+}
+
 pub fn arc_local_analyze(body: &mut AstStmt, _cfg: &Cfg, method_name: &str) -> ArcResult {
-    let return_ownership = ownership_for_method(method_name);
+    let _ = ownership_for_method(method_name);
     let mut res = ArcResult::new();
 
     let stmts = match body.data {
@@ -110,13 +126,9 @@ pub fn arc_local_analyze(body: &mut AstStmt, _cfg: &Cfg, method_name: &str) -> A
         _ => return res,
     };
 
-    // Recursively analyze scope, inserting releases directly.
-    // `parent_vars` are variables from enclosing scopes that also need release.
-    fn analyze_scope(stmts: &mut Vec<AstStmt>, return_ownership: Ownership, res: &mut ArcResult, parent_vars: &[String]) {
-        let mut release_vars: Vec<String> = parent_vars.to_vec();
-
-        // Helper: get all active variables (parent + current)
-        let all_vars = || -> &Vec<String> { &release_vars };
+    fn analyze_scope(stmts: &mut Vec<AstStmt>, res: &mut ArcResult, stack: &mut Vec<Scope>, inside_loop: bool) {
+        stack.push(Scope::new(inside_loop));
+        let my_idx = stack.len() - 1;
 
         let mut i = 0;
         while i < stmts.len() {
@@ -133,7 +145,7 @@ pub fn arc_local_analyze(body: &mut AstStmt, _cfg: &Cfg, method_name: &str) -> A
                     _ => std::ptr::null_mut(),
                 };
                 if !inner.is_null() {
-                    unsafe { analyze_scope(&mut *inner, return_ownership, res, &release_vars); }
+                    unsafe { recurse_scope(&mut *inner, res, stack); }
                 }
                 i += 1;
                 continue;
@@ -145,7 +157,7 @@ pub fn arc_local_analyze(body: &mut AstStmt, _cfg: &Cfg, method_name: &str) -> A
                     if ownership_for_expr(init_val) == Ownership::Retained {
                         if let Some(ref name) = d.name {
                             if var_type.as_ref().map_or(false, |t| is_object_type(t)) {
-                                release_vars.push(name.clone());
+                                stack[my_idx].vars.push(name.clone());
                             }
                         }
                     }
@@ -154,26 +166,37 @@ pub fn arc_local_analyze(body: &mut AstStmt, _cfg: &Cfg, method_name: &str) -> A
                 continue;
             }
 
-            // ─── Handle return: insert releases before it ──
+            // ── Handle break/continue: release ONLY vars inside the nearest loop ──
+            if matches!(stmts[i].kind, AstStmtKind::Break | AstStmtKind::Continue) {
+                let mut from = stack.len();
+                for idx in (0..stack.len()).rev() {
+                    from = idx;
+                    if stack[idx].inside_loop { break; }
+                }
+                let mut to_release = collect_vars(stack, from);
+                let n = insert_releases_before(stmts, i, &mut to_release, None);
+                for s in stack[from..].iter_mut() { s.vars.clear(); }
+                i += 1 + n;
+                continue;
+            }
+
+            // ── Handle return: release all live vars (current + enclosing), then exit ──
             let is_return = matches!(stmts[i].data, AstStmtData::Return(_));
             if is_return {
                 let ret_expr_clone = match &stmts[i].data { AstStmtData::Return(e) => e.clone(), _ => None };
-                let n = insert_releases_before(stmts, i, &mut release_vars, ret_expr_clone.as_ref().map(|e| e.as_ref()));
+                let mut all = collect_vars(stack, 0);
+                let n = insert_releases_before(stmts, i, &mut all, ret_expr_clone.as_ref().map(|e| e.as_ref()));
+                clear_all(stack);
                 i += 1 + n;
                 continue;
             }
 
-            // ── Handle throw: insert releases before it (exempt thrown variable) ──
+            // ── Handle throw: release all live vars, then rethrow ──
             if matches!(stmts[i].data, AstStmtData::Throw(_)) {
                 let throw_expr = match &stmts[i].data { AstStmtData::Throw(e) => e.clone(), _ => None };
-                let n = insert_releases_before(stmts, i, &mut release_vars, throw_expr.as_ref().map(|e| e.as_ref()));
-                i += 1 + n;
-                continue;
-            }
-
-            // ── Handle break/continue: insert releases before it ──
-            if matches!(stmts[i].kind, AstStmtKind::Break | AstStmtKind::Continue) {
-                let n = insert_releases_before(stmts, i, &mut release_vars, None);
+                let mut all = collect_vars(stack, 0);
+                let n = insert_releases_before(stmts, i, &mut all, throw_expr.as_ref().map(|e| e.as_ref()));
+                clear_all(stack);
                 i += 1 + n;
                 continue;
             }
@@ -182,13 +205,12 @@ pub fn arc_local_analyze(body: &mut AstStmt, _cfg: &Cfg, method_name: &str) -> A
             if stmts[i].kind == AstStmtKind::If {
                 let if_taken = std::mem::replace(&mut stmts[i].data, AstStmtData::Expr(AstExpr { kind: AstExprKind::Int, expr_type: None, line: 0, col: 0, data: AstExprData::Int(0) }));
                 if let AstStmtData::If { cond, mut then, mut else_ } = if_taken {
-                    // Ensure branches are Compound (wrap single statements)
                     if !matches!(then.data, AstStmtData::Compound(_)) {
                         let body = std::mem::replace(&mut then.data, AstStmtData::Compound(vec![]));
                         then.data = AstStmtData::Compound(vec![AstStmt { kind: then.kind, line: then.line, col: then.col, data: body }]);
                     }
                     if let AstStmtData::Compound(ref mut inner) = then.data {
-                        unsafe { analyze_scope(&mut *inner, return_ownership, res, &release_vars); }
+                        unsafe { analyze_scope(&mut *inner, res, stack, false); }
                     }
                     if let Some(ref mut el) = else_ {
                         if !matches!(el.data, AstStmtData::Compound(_)) {
@@ -196,7 +218,7 @@ pub fn arc_local_analyze(body: &mut AstStmt, _cfg: &Cfg, method_name: &str) -> A
                             el.data = AstStmtData::Compound(vec![AstStmt { kind: el.kind, line: el.line, col: el.col, data: body }]);
                         }
                         if let AstStmtData::Compound(ref mut inner) = el.data {
-                            unsafe { analyze_scope(&mut *inner, return_ownership, res, &release_vars); }
+                            unsafe { analyze_scope(&mut *inner, res, stack, false); }
                         }
                     }
                     stmts[i].data = AstStmtData::If { cond, then, else_ };
@@ -205,21 +227,37 @@ pub fn arc_local_analyze(body: &mut AstStmt, _cfg: &Cfg, method_name: &str) -> A
                 continue;
             }
 
-            // ── Handle while, for, for-in: recurse into body ──
+            // ── Handle while, for, for-in: recurse into body (loop scope) ──
             let is_loop = matches!(stmts[i].kind, AstStmtKind::While | AstStmtKind::For | AstStmtKind::ForIn);
             if is_loop {
                 let loop_taken = std::mem::replace(&mut stmts[i].data, AstStmtData::Expr(AstExpr { kind: AstExprKind::Int, expr_type: None, line: 0, col: 0, data: AstExprData::Int(0) }));
                 match loop_taken {
                     AstStmtData::While { cond, mut body } => {
-                        if let AstStmtData::Compound(ref mut inner) = body.data { unsafe { analyze_scope(&mut *inner, return_ownership, res, &release_vars); } }
+                        recurse_loop_body(&mut body, res, stack);
                         stmts[i].data = AstStmtData::While { cond, body };
                     }
                     AstStmtData::For { mut init, cond, mut incr, mut body } => {
-                        if let AstStmtData::Compound(ref mut inner) = body.data { unsafe { analyze_scope(&mut *inner, return_ownership, res, &release_vars); } }
+                        // Register an object declared in the for-init (e.g. `for (Mini *o = [[Mini alloc] init]; ...)`)
+                        // in the enclosing scope so it's released at scope end. Its declaration
+                        // is hoisted out of the for header by codegen.
+                        if let Some(ref init_stmt) = init {
+                            if let AstStmtData::Decl(d) = &init_stmt.data {
+                                if let AstDeclData::Variable { init: Some(ref init_val), ref var_type, .. } = d.data {
+                                    if ownership_for_expr(init_val) == Ownership::Retained {
+                                        if let Some(ref name) = d.name {
+                                            if var_type.as_ref().map_or(false, |t| is_object_type(t)) {
+                                                stack[my_idx].vars.push(name.clone());
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        recurse_loop_body(&mut body, res, stack);
                         stmts[i].data = AstStmtData::For { init, cond, incr, body };
                     }
                     AstStmtData::ForIn { mut var, mut collection, mut body } => {
-                        if let AstStmtData::Compound(ref mut inner) = body.data { unsafe { analyze_scope(&mut *inner, return_ownership, res, &release_vars); } }
+                        recurse_loop_body(&mut body, res, stack);
                         stmts[i].data = AstStmtData::ForIn { var, collection, body };
                     }
                     _ => {}
@@ -232,14 +270,14 @@ pub fn arc_local_analyze(body: &mut AstStmt, _cfg: &Cfg, method_name: &str) -> A
             if stmts[i].kind == AstStmtKind::Try {
                 let try_taken = std::mem::replace(&mut stmts[i].data, AstStmtData::Expr(AstExpr { kind: AstExprKind::Int, expr_type: None, line: 0, col: 0, data: AstExprData::Int(0) }));
                 if let AstStmtData::Try { mut try_block, mut catches, mut finally_block } = try_taken {
-                    if let AstStmtData::Compound(ref mut inner) = try_block.data { unsafe { analyze_scope(&mut *inner, return_ownership, res, &release_vars); } }
+                    if let AstStmtData::Compound(ref mut inner) = try_block.data { unsafe { analyze_scope(&mut *inner, res, stack, false); } }
                     for c in catches.iter_mut() {
                         if let AstStmtData::Catch { ref mut body, .. } = c.data {
-                            if let AstStmtData::Compound(ref mut inner) = body.data { unsafe { analyze_scope(&mut *inner, return_ownership, res, &release_vars); } }
+                            if let AstStmtData::Compound(ref mut inner) = body.data { unsafe { analyze_scope(&mut *inner, res, stack, false); } }
                         }
                     }
                     if let Some(ref mut fb) = finally_block {
-                        if let AstStmtData::Compound(ref mut inner) = fb.data { unsafe { analyze_scope(&mut *inner, return_ownership, res, &release_vars); } }
+                        if let AstStmtData::Compound(ref mut inner) = fb.data { unsafe { analyze_scope(&mut *inner, res, stack, false); } }
                     }
                     stmts[i].data = AstStmtData::Try { try_block, catches, finally_block };
                 }
@@ -247,17 +285,17 @@ pub fn arc_local_analyze(body: &mut AstStmt, _cfg: &Cfg, method_name: &str) -> A
                 continue;
             }
 
-            // ── Handle manual `[var release]` or `nupa_release(var)`: remove var from tracking ──
+            // ── Handle manual `[var release]` / `nupa_release(var)`: forget var everywhere ──
             if let AstStmtData::Expr(e) = &stmts[i].data {
                 match &e.data {
                     AstExprData::MsgSend { receiver, selector, args, .. } if selector == "release" && args.is_empty() => {
                         if let AstExprData::VarRef { name, .. } = &receiver.data {
-                            release_vars.retain(|v| *v != *name);
+                            drop_var(stack, name);
                         }
                     }
                     AstExprData::FuncCall { name, args, .. } if name == "nupa_release" && args.len() == 1 => {
                         if let AstExprData::VarRef { name, .. } = &args[0].data {
-                            release_vars.retain(|v| *v != *name);
+                            drop_var(stack, name);
                         }
                     }
                     _ => {}
@@ -267,35 +305,53 @@ pub fn arc_local_analyze(body: &mut AstStmt, _cfg: &Cfg, method_name: &str) -> A
             i += 1;
         }
 
-        // Insert releases at end of scope for remaining variables (before trailing Return)
-        if !release_vars.is_empty() && !stmts.is_empty() {
-            let insert_pos = if stmts.len() >= 2 {
-                let last = &stmts[stmts.len() - 1];
-                if is_return_stmt(last) {
-                    // Don't release variables that are being returned
-                    if let AstStmtData::Return(Some(ref e)) = last.data {
-                        if let Some(rv) = extract_returned_var(e) {
-                            release_vars.retain(|v| v != rv);
-                        }
-                    }
-                    stmts.len() - 1
-                } else {
-                    stmts.len()
-                }
-            } else {
-                stmts.len()
-            };
-            for name in &release_vars {
-                let var_ref = AstExpr {
-                    kind: AstExprKind::VarRef, expr_type: None, line: 0, col: 0,
-                    data: AstExprData::VarRef { sym: None, name: name.clone() },
-                };
-                stmts.insert(insert_pos, make_release_stmt(&var_ref));
+        // ── End of scope: release this scope's own remaining vars ──
+        let own: Vec<String> = stack[my_idx].vars.clone();
+        if !own.is_empty() {
+            let insert_pos = if is_return_stmt(stmts.last().unwrap()) { stmts.len() - 1 } else { stmts.len() };
+            for name in &own {
+                stmts.insert(insert_pos, make_release_stmt(&var_ref_expr(name)));
             }
+        }
+        stack.pop();
+    }
+
+    fn clear_all(stack: &mut Vec<Scope>) {
+        for s in stack.iter_mut() { s.vars.clear(); }
+    }
+
+    fn drop_var(stack: &mut Vec<Scope>, name: &str) {
+        for s in stack.iter_mut() {
+            s.vars.retain(|v| v != name);
         }
     }
 
-    analyze_scope(stmts, return_ownership, &mut res, &[]);
+    fn recurse_scope(inner: &mut Vec<AstStmt>, res: &mut ArcResult, stack: &mut Vec<Scope>) {
+        unsafe { analyze_scope(inner, res, stack, false); }
+    }
+
+    fn recurse_loop_body(body: &mut AstStmt, res: &mut ArcResult, stack: &mut Vec<Scope>) {
+        // Wrap non-compound bodies so releases are inserted in a scope.
+        let inner: *mut Vec<AstStmt> = match body.data {
+            AstStmtData::Compound(ref mut inner) => inner as *mut Vec<AstStmt>,
+            _ => {
+                let wrapped = std::mem::replace(&mut body.data, AstStmtData::Compound(vec![]));
+                if let AstStmtData::Compound(ref mut v) = body.data {
+                    v.push(AstStmt { kind: body.kind, line: body.line, col: body.col, data: wrapped });
+                }
+                match body.data {
+                    AstStmtData::Compound(ref mut inner) => inner as *mut Vec<AstStmt>,
+                    _ => std::ptr::null_mut(),
+                }
+            }
+        };
+        if !inner.is_null() {
+            unsafe { analyze_scope(&mut *inner, res, stack, true); }
+        }
+    }
+
+    let mut stack: Vec<Scope> = Vec::new();
+    analyze_scope(stmts, &mut res, &mut stack, false);
     res
 }
 

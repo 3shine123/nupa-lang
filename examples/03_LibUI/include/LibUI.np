@@ -1,0 +1,129 @@
+#import <LibUI.nh>
+#include <string.h>
+#include <stdlib.h>
+
+/* macOS activation helper (LibUI_mac.c) */
+void nk_app_activate(void);
+
+/* libui window close handler: quit the main loop */
+static int nk_window_closing(struct uiWindow *w, void *data) {
+    (void)w; (void)data;
+    uiQuit();
+    return 1;
+}
+
+@namespace LibUI {
+
+    @implementation Window
+    + (Window *)withTitle:(const char *)title width:(int)w height:(int)h {
+        Window *self = [[self alloc] init];
+        if (self) {
+            self->_handle = uiNewWindow(title, w, h, 0);
+        }
+        return self;
+    }
+    - (void)show { uiControlShow((struct uiControl *)self->_handle); }
+    + (void)activate { nk_app_activate(); }
+    - (void)onClosingQuit { uiWindowOnClosing(self->_handle, nk_window_closing, NULL); }
+    - (void)setChild:(struct uiControl *)child { uiWindowSetChild(self->_handle, child); }
+    - (struct uiWindow *)handle { return self->_handle; }
+    @end
+
+    @implementation Box
+    + (Box *)vertical {
+        Box *self = [[self alloc] init];
+        if (self) self->_handle = uiNewVerticalBox();
+        return self;
+    }
+    + (Box *)horizontal {
+        Box *self = [[self alloc] init];
+        if (self) self->_handle = uiNewHorizontalBox();
+        return self;
+    }
+    - (void)append:(struct uiControl *)child stretch:(int)stretch { uiBoxAppend(self->_handle, child, stretch); }
+    - (struct uiBox *)handle { return self->_handle; }
+    @end
+
+    @implementation Button
+    + (Button *)withText:(const char *)text {
+        Button *self = [[self alloc] init];
+        if (self) {
+            self->_handle = uiNewButton(text);
+            self->_cbData = NULL;
+        }
+        return self;
+    }
+    - (void)onClicked:(void *)cb data:(void *)data {
+        self->_cbData = data;
+        uiButtonOnClicked(self->_handle, (void (*)(struct uiButton *, void *))cb, data);
+    }
+    - (struct uiButton *)handle { return self->_handle; }
+    @end
+
+    @implementation Label
+    + (Label *)withText:(const char *)text {
+        Label *self = [[self alloc] init];
+        if (self) self->_handle = uiNewLabel(text);
+        return self;
+    }
+    - (void)setText:(const char *)text { uiLabelSetText(self->_handle, text); }
+    - (struct uiLabel *)handle { return self->_handle; }
+    @end
+
+    @implementation Entry
+    + (Entry *)create {
+        Entry *self = [[self alloc] init];
+        if (self) self->_handle = uiNewEntry();
+        return self;
+    }
+    - (const char *)text { return uiEntryText(self->_handle); }
+    - (void)setText:(const char *)text { uiEntrySetText(self->_handle, text); }
+    - (struct uiEntry *)handle { return self->_handle; }
+    @end
+
+    @implementation MultilineEntry
+    + (MultilineEntry *)create {
+        MultilineEntry *self = [[self alloc] init];
+        if (self) self->_handle = uiNewMultilineEntry();
+        return self;
+    }
+    - (const char *)text { return uiMultilineEntryText(self->_handle); }
+    - (void)setText:(const char *)text { uiMultilineEntrySetText(self->_handle, text); }
+    - (struct uiMultilineEntry *)handle { return self->_handle; }
+    @end
+
+    @implementation Separator
+    + (Separator *)horizontal {
+        Separator *self = [[self alloc] init];
+        if (self) self->_handle = uiNewHorizontalSeparator();
+        return self;
+    }
+    + (Separator *)vertical {
+        Separator *self = [[self alloc] init];
+        if (self) self->_handle = uiNewVerticalSeparator();
+        return self;
+    }
+    - (struct uiSeparator *)handle { return self->_handle; }
+    @end
+
+    @implementation Group
+    + (Group *)withTitle:(const char *)title {
+        Group *self = [[self alloc] init];
+        if (self) self->_handle = uiNewGroup(title);
+        return self;
+    }
+    - (void)setChild:(struct uiControl *)child { uiGroupSetChild(self->_handle, child); }
+    - (struct uiGroup *)handle { return self->_handle; }
+    @end
+
+    @implementation Tab
+    + (Tab *)create {
+        Tab *self = [[self alloc] init];
+        if (self) self->_handle = uiNewTab();
+        return self;
+    }
+    - (void)append:(const char *)name child:(struct uiControl *)child { uiTabAppend(self->_handle, name, child); }
+    - (struct uiTab *)handle { return self->_handle; }
+    @end
+
+} // @namespace LibUI

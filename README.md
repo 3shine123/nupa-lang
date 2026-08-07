@@ -5,7 +5,9 @@
 
 # The Nupa Programming Language
 
-[Overview](#overview) · [Why Nupa?](#why-nupa) · [Quick Start](#quick-start) · [Language Features](#language-features) · [New Features](#new-features) · [Compilation & CLI](#compilation--cli) · [Code Examples](#code-examples) · [Design Principles](#design-principles) · [Roadmap](#roadmap) · [FAQ](#faq)
+[**View Project Examples**](#project-examples)
+
+[Overview](#overview) · [Why Nupa?](#why-nupa) · [Project Examples](#project-examples) · [Quick Start](#quick-start) · [Language Features](#language-features) · [New Features](#new-features) · [Compilation & CLI](#compilation--cli) · [Code Examples](#code-examples) · [Design Principles](#design-principles) · [Roadmap](#roadmap) · [FAQ](#faq)
 
 </div>
 
@@ -36,6 +38,22 @@ This is not a production-ready language. It's a toy, exploring the question: "wh
 - **Fun**: that's the most important one
 - **Readable**: generated C is meant to be read by humans
 - **Lightweight**: just one small static runtime
+
+---
+
+## Project Examples
+
+[![examples](https://img.shields.io/badge/examples-000?style=for-the-badge)](examples/)
+
+`examples/`
+
+| Project                    | Description                                                                              | Run                                                 |
+| -------------------------- | ---------------------------------------------------------------------------------------- | --------------------------------------------------- |
+| **`04_soma-kernel/`**      | Tiny 32‑bit i386 OS kernel (NASM + C + Nupa), bare‑metal `-fno-libc` mode                | `./run.sh` or `./run.sh --gui`                      |
+| **`03_LibUI/`**            | GUI app via [libui-ng](https://github.com/libui-ng/libui-ng), all callbacks in pure Nupa | `./run_libui.sh`                                    |
+| **`02_ncurses/`**          | Terminal demos (`ncurses_demo`, `sysmon`) using `Terminal::Ncurses`                      | `make run`                                          |
+| **`01_JSONEditor/`**       | Multi‑file JSON editor with split‑screen terminal preview                                | `nupac run json_editor.np`                          |
+| **`26_baremetal_stress/`** | 14‑check bare‑metal stress test (inheritance, protocols, exceptions, recursion, …)       | `./build.sh` in `tests/golden/26_baremetal_stress/` |
 
 ---
 
@@ -220,6 +238,13 @@ NPObject *obj = [[NPObject alloc] init];
 
 Nupa adds features on top of Objective-C syntax that ObjC itself doesn't have.
 
+**Recent highlights:**
+
+- **Native bare-metal support (`-fno-libc`)** — compiles to self-contained C with no libc, no Foundation, no TLS; `@try/@catch` uses `__builtin_setjmp/longjmp`, and a zero-boilerplate `runtime_baremetal.c` provides the bump allocator, `nupa___nupa_root_class`, exception state, and `memcpy`.
+- **C superset** — `@protocol` + conformance, `@property` + `@synthesize`, `instancetype`, `@public` ivars, dot syntax, structs + function pointers, inline asm, C-style casts.
+- **Typed `@catch`** — each catch block now checks `isa == &nupa_Class_class`, so only the matching class enters the handler; multiple catches are properly isolated.
+- **ARC fixes** — scope-stack model no longer releases parent-scope variables at nested scope end; `for`-init object hoisting stops leaks and invalid `for` headers.
+
 ### Implicit Root Class (`__nupa_root`)
 
 Nupa now supports user-defined root classes. You no longer need to inherit from `NPObject` — an `@interface` without a superclass automatically gets a compiler-injected implicit root class `__nupa_root`, while keeping `id` type uniformity and static dispatch.
@@ -330,6 +355,66 @@ struct Dog {
 @interface UserModel : NPObject
 @property NSString *name;
 @end
+```
+
+#### Bare-Metal / Freestanding Support (`-fno-libc`)
+
+Nupa can compile to **self-contained C with no libc, no Foundation, no TLS**, for kernels, MCUs, and bare-metal embedded development.
+
+```bash
+nupac -rewrite-nupa -fno-libc kernel.np   # emits self-contained C
+```
+
+In `-fno-libc` mode the transpiled C:
+
+- does **not** `#include <string.h>`; instead `#include <nupa/runtime.h>` (freestanding branch)
+- implements `@try/@catch/@finally` with `__builtin_setjmp/longjmp` (zero libc), with plain (non-`__thread`) exception globals
+- is self-contained for `SEL`/`NPClass`/`NPObject`/`id`
+
+The user only provides: `nupa___nupa_root_class`, the exception globals (if using `@try`), `memcpy` (if using `@try`), and freestanding headers (`stdint.h`/`stddef.h`/`stdbool.h`).
+
+**Bare-metal allocator + `[[Class alloc] init]`** (`include/nupa/runtime_baremetal.c`):
+
+```nupa
+@interface HeapCounter {
+    int total;
+}
++ (id) alloc;
+- (id) init;
+- (int) add:(int)x;
+@end
+@implementation HeapCounter
++ (id) alloc  { return nupa_alloc(self); }   // bump allocator
+- (id) init   { return self; }
+- (int) add:(int)x { total += x; return total; }
+@end
+
+void demo(void) {
+    HeapCounter *c = [[HeapCounter alloc] init];  // bare-metal heap alloc
+    [c add:10];                                    // → 10
+}
+```
+
+Features verified bare-metal (`examples/04_soma-kernel/` i386 protected-mode kernel + `tests/golden/25_freestanding/`):
+
+- `@namespace` + `@interface` (implicit root class)
+- Class / instance method messaging
+- `@try/@catch/@finally`
+- `@selector`, inline asm, C-style casts
+- `[[Class alloc] init]` heap allocation + ARC auto-`nupa_release`
+
+Sample output (soma-kernel under qemu):
+
+```
+[nupa] class method [SomaCore::Calculator compute:21] = 43
+[nupa] instance methods on C-created obj: add:7 -> 7, add:35 -> 42, value = 42
+[nupa] @try/@catch demo:
+       try body, throwing...
+       caught [e errorCode] = 42
+       finally always runs
+       after-try continues
+[nupa] alloc+init (bump allocator):
+       [c add:10]=10 [c add:20]=30 [c value]=30
 ```
 
 #### Method Dispatch

@@ -1,0 +1,105 @@
+#include <stdio.h>
+#include <string.h>
+#include <stdlib.h>
+#include <ui.h>
+#import <Foundation/Foundation.nh>
+#import <LibUI.nh>
+
+struct CounterCtx {
+    int value;
+    struct uiLabel *label;
+};
+
+void onGreet(struct uiButton *b, void *data) {
+    (void)b;
+    struct uiEntry *e = (struct uiEntry *)data;
+    const char *name = uiEntryText(e);
+    printf("Hello, %s!\n", name);
+}
+
+void *counter_ctx_create(struct uiLabel *label) {
+    struct CounterCtx *ctx = (struct CounterCtx *)malloc(sizeof(struct CounterCtx));
+    ctx->value = 0;
+    ctx->label = label;
+    return ctx;
+}
+
+void onInc(struct uiButton *b, void *data) {
+    (void)b;
+    struct CounterCtx *ctx = (struct CounterCtx *)data;
+    ctx->value++;
+    char buf[64];
+    snprintf(buf, sizeof(buf), "Counter: %d", ctx->value);
+    uiLabelSetText(ctx->label, buf);
+}
+
+void onDec(struct uiButton *b, void *data) {
+    (void)b;
+    struct CounterCtx *ctx = (struct CounterCtx *)data;
+    ctx->value--;
+    char buf[64];
+    snprintf(buf, sizeof(buf), "Counter: %d", ctx->value);
+    uiLabelSetText(ctx->label, buf);
+}
+
+void onReset(struct uiButton *b, void *data) {
+    (void)b;
+    struct CounterCtx *ctx = (struct CounterCtx *)data;
+    ctx->value = 0;
+    char buf[64];
+    snprintf(buf, sizeof(buf), "Counter: %d", ctx->value);
+    uiLabelSetText(ctx->label, buf);
+}
+
+int main() {
+    @autoreleasepool {
+        LibUI::Window *win = [LibUI::Window withTitle:"Nupa + libui-ng" width:600 height:400];
+        LibUI::Tab *tab = [LibUI::Tab create];
+
+        /* ── Tab 1: Controls ── */
+        LibUI::Box *ctrlBox = [LibUI::Box vertical];
+        LibUI::Label *lbl = [LibUI::Label withText:"Enter your name:"];
+        [ctrlBox append:(struct uiControl *)[lbl handle] stretch:0];
+        LibUI::Entry *entry = [LibUI::Entry create];
+        [ctrlBox append:(struct uiControl *)[entry handle] stretch:0];
+        LibUI::Button *greetBtn = [LibUI::Button withText:"Say Hello"];
+        [greetBtn onClicked:onGreet data:[entry handle]];
+        [ctrlBox append:(struct uiControl *)[greetBtn handle] stretch:0];
+        LibUI::Separator *sep = [LibUI::Separator horizontal];
+        [ctrlBox append:(struct uiControl *)[sep handle] stretch:0];
+
+        /* ── Tab 2: Info ── */
+        LibUI::Box *infoBox = [LibUI::Box vertical];
+        LibUI::MultilineEntry *info = [LibUI::MultilineEntry create];
+        [info setText:"Nupa + libui-ng Demo\nlibui-ng is a cross-platform GUI library.\nNupa wraps it with ObjC-style syntax."];
+        [infoBox append:(struct uiControl *)[info handle] stretch:1];
+
+        /* ── Tab 3: Counter ── */
+        LibUI::Box *countBox = [LibUI::Box vertical];
+        LibUI::Label *countLabel = [LibUI::Label withText:"Counter: 0"];
+        void *ctx = counter_ctx_create([countLabel handle]);
+        [countBox append:(struct uiControl *)[countLabel handle] stretch:0];
+        LibUI::Button *incBtn = [LibUI::Button withText:"+1"];
+        [incBtn onClicked:onInc data:ctx];
+        [countBox append:(struct uiControl *)[incBtn handle] stretch:0];
+        LibUI::Button *decBtn = [LibUI::Button withText:"-1"];
+        [decBtn onClicked:onDec data:ctx];
+        [countBox append:(struct uiControl *)[decBtn handle] stretch:0];
+        LibUI::Button *resetBtn = [LibUI::Button withText:"Reset"];
+        [resetBtn onClicked:onReset data:ctx];
+        [countBox append:(struct uiControl *)[resetBtn handle] stretch:0];
+
+        [tab append:"Controls" child:(struct uiControl *)[ctrlBox handle]];
+        [tab append:"Info" child:(struct uiControl *)[infoBox handle]];
+        [tab append:"Counter" child:(struct uiControl *)[countBox handle]];
+
+        [win setChild:(struct uiControl *)[tab handle]];
+        [win onClosingQuit];
+        [win show];
+        [LibUI::Window activate];
+
+        uiMain();
+        printf("Done.\n");
+    }
+    return 0;
+}

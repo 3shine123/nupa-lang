@@ -101,25 +101,26 @@ fn resolve_source(
                 }
             }
         } else if line.trim_start().starts_with('#') {
-            // Other preprocessor directives: #define, #ifdef, etc.
+            // Preprocessor directives: #define, #ifdef, #ifndef, #endif, #pragma, etc.
             // Check if #define contains nupa message send syntax [receiver msg]
+            // If so, keep it in Nupa source so the parser and codegen can process it.
             let is_define_with_nupa = if line.trim_start().starts_with("#define") {
-                let body = line.trim_start();
-                let body = &body["#define".len()..].trim();
-                let value_start = body.find(char::is_whitespace)
-                    .map(|i| body[i..].trim_start())
+                let line_body = line.trim_start();
+                let line_body = &line_body["#define".len()..].trim();
+                let value_start = line_body.find(char::is_whitespace)
+                    .map(|i| line_body[i..].trim_start())
                     .unwrap_or("");
                 value_start.contains('[') && value_start.contains(']')
             } else {
                 false
             };
-
             if is_define_with_nupa {
-                // #define with message send → keep in nupa source
-                nupa_out.push_str(line);
-                nupa_out.push('\n');
+                // #define with message send: NOT supported. The C compiler
+                // doesn't understand [receiver msg] syntax, and the Nupa
+                // compiler can't expand macros. Users should use inline code.
+                let orig = line.to_string();
+                c_out.push(orig.trim().to_string());
             } else {
-                // Forward to C output
                 let orig = line.to_string();
                 c_out.push(orig.trim().to_string());
             }

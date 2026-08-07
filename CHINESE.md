@@ -5,7 +5,9 @@
 
 # Nupa 编程语言
 
-[概述](#概述) · [为什么要创造出 Nupa？](#为什么要创造出-nupa) · [快速开始](#快速开始) · [语言特性](#语言特性) · [新特性](#新特性) · [编译与运行](#编译与运行) · [代码示例](#代码示例) · [设计原则](#设计原则) · [路线图](#路线图) · [FAQ](#faq)
+[**查看项目示例**](#项目示例)
+
+[概述](#概述) · [为什么要创造出 Nupa？](#为什么要创造出-nupa) · [项目示例](#项目示例) · [快速开始](#快速开始) · [语言特性](#语言特性) · [新特性](#新特性) · [编译与运行](#编译与运行) · [代码示例](#代码示例) · [设计原则](#设计原则) · [路线图](#路线图) · [FAQ](#faq)
 
 </div>
 
@@ -36,6 +38,21 @@ Nupa 是一门**纯静态**的 Objective-C 方言（C 超集语言）。Nupa 源
 - **好玩**：这是最重要的
 - **可读**：生成的 C 代码是给人看的
 - **轻量**：只有一个静态的迷你运行时
+
+---
+
+## 项目示例
+
+[![examples](https://img.shields.io/badge/examples-000?style=for-the-badge)](examples/)
+
+`examples/` 
+
+| 项目                    | 说明                                                                      | 运行                            |
+| --------------------- | ----------------------------------------------------------------------- | ----------------------------- |
+| **`04_soma-kernel/`** | 很小的 32 位 i386 操作系统内核（NASM + C + Nupa），裸机 `-fno-libc` 模式                 | `./run.sh` 或 `./run.sh --gui` |
+| **`03_LibUI/`**       | 基于 [libui-ng](https://github.com/libui-ng/libui-ng) 的 GUI 应用，全部回调纯 Nupa | `./run_libui.sh`              |
+| **`02_ncurses/`**     | 终端示例（`ncurses_demo`、`sysmon`），使用 `Terminal::Ncurses` 绑定                 | `make run`                    |
+| **`01_JSONEditor/`**  | 多文件 JSON 编辑器，分屏终端预览                                                     | `nupac run json_editor.np`    |
 
 ---
 
@@ -302,6 +319,66 @@ id obj = a;                    // ✅ 合法，Animal 继承自 __nupa_root
 @interface UserModel : NPObject
 @property NSString *name;
 @end
+```
+
+#### 裸机 / Freestanding 支持（`-fno-libc`）
+
+Nupa 可以编译为**无 libc、无 Foundation、无 TLS** 的自包含 C，直接用于内核、MCU、嵌入式裸机开发。
+
+```bash
+nupac -rewrite-nupa -fno-libc kernel.np   # 生成自包含 C
+```
+
+`-fno-libc` 模式下转译出的 C：
+
+- 不 `#include <string.h>`，改 `#include <nupa/runtime.h>`（freestanding 分支）
+- `@try/@catch/@finally` 用 `__builtin_setjmp/longjmp`（零 libc），异常状态用普通全局而非 `__thread`
+- 类型（`SEL`/`NPClass`/`NPObject`/`id`）自含
+
+用户只需提供：`nupa___nupa_root_class`、异常全局（如用 `@try`）、`memcpy`（如用 `@try`）、freestanding 头（`stdint.h`/`stddef.h`/`stdbool.h`）。
+
+**裸机分配器 + `[[Class alloc] init]`**（`include/nupa/runtime_baremetal.c`）：
+
+```nupa
+@interface HeapCounter {
+    int total;
+}
++ (id) alloc;
+- (id) init;
+- (int) add:(int)x;
+@end
+@implementation HeapCounter
++ (id) alloc  { return nupa_alloc(self); }   // bump allocator
+- (id) init   { return self; }
+- (int) add:(int)x { total += x; return total; }
+@end
+
+void demo(void) {
+    HeapCounter *c = [[HeapCounter alloc] init];  // 裸机堆分配
+    [c add:10];                                    // → 10
+}
+```
+
+已跑通的特性（`examples/04_soma-kernel/` 的 i386 保护模式内核 + `tests/golden/25_freestanding/`）：
+
+- `@namespace` + `@interface`（隐式根类）
+- 类方法 / 实例方法消息派发
+- `@try/@catch/@finally`
+- `@selector`、内联 asm、C 类型转换
+- `[[Class alloc] init]` 裸机堆分配 + ARC 自动 `nupa_release`
+
+运行示例（soma-kernel 在 qemu 下）：
+
+```
+[nupa] class method [SomaCore::Calculator compute:21] = 43
+[nupa] instance methods on C-created obj: add:7 -> 7, add:35 -> 42, value = 42
+[nupa] @try/@catch demo:
+       try body, throwing...
+       caught [e errorCode] = 42
+       finally always runs
+       after-try continues
+[nupa] alloc+init (bump allocator):
+       [c add:10]=10 [c add:20]=30 [c value]=30
 ```
 
 #### 方法派发

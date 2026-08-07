@@ -1,0 +1,38 @@
+#include <stdio.h>
+
+struct Widget {
+    int wnum;
+    int wval;
+};
+
+void apply_callback(void (*cb)(struct Widget *, void *), struct Widget *w, void *data) {
+    cb(w, data);
+}
+
+void my_callback(struct Widget *w, void *data) {
+    printf("callback wnum=%d\n", w->wnum);
+}
+
+int main() {
+    // C-style cast
+    struct Widget w;
+    w.wnum = 42;
+    w.wval = 7;
+    struct Widget *pw = (struct Widget *)&w;
+    pw->wnum = 99;
+    printf("pw->wnum=%d pw->wval=%d\n", pw->wnum, pw->wval);
+
+    // Function pointer variable
+    void (*fn)(struct Widget *, void *) = my_callback;
+    fn(pw, NULL);
+
+    // Cast to function pointer type
+    apply_callback((void (*)(struct Widget *, void *))my_callback, pw, NULL);
+
+    // Plain (void*) cast
+    void *raw = (void *)pw;
+    struct Widget *back = (struct Widget *)raw;
+    printf("back->wnum=%d\n", back->wnum);
+
+    return 0;
+}

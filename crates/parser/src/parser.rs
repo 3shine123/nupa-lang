@@ -427,6 +427,40 @@ impl<'a> Parser<'a> {
                     self.consume(TokenKind::RParen, "expected ')' after block param list");
                 }
                 t = bt;
+            } else if self.match_token(TokenKind::Star) {
+                // Function pointer: T (*)(params) or T (*name)(params)
+                let mut ft = CstType::new(t.prim);
+                ft.is_fn_ptr = true;
+                ft.is_pointer = true;
+                ft.subtype = Some(Box::new(t));
+                if self.current.kind == TokenKind::Identifier {
+                    ft.block_name = Some(self.current_text().to_string());
+                    self.advance();
+                }
+                self.consume(TokenKind::RParen, "expected ')' after function pointer");
+                if self.match_token(TokenKind::LParen) {
+                    let mut params: Vec<CstType> = Vec::new();
+                    while !self.check(TokenKind::RParen) && !self.check(TokenKind::Eof) {
+                        if let Some(ptype) = self.parse_type_full() {
+                            if self.current.kind == TokenKind::Identifier {
+                                self.advance();
+                            }
+                            params.push(ptype);
+                        } else {
+                            self.advance();
+                        }
+                        if !self.match_token(TokenKind::Comma) { break; }
+                    }
+                    let mut head = None;
+                    let mut tail: &mut Option<Box<CstType>> = &mut head;
+                    for p in params {
+                        let boxed = Box::new(p);
+                        tail = &mut tail.insert(boxed).next;
+                    }
+                    ft.block_params = head;
+                    self.consume(TokenKind::RParen, "expected ')' after function pointer params");
+                }
+                t = ft;
             } else {
                 self.consume(TokenKind::RParen, "expected ')' after function type");
             }
@@ -640,6 +674,14 @@ impl<'a> Parser<'a> {
                 kind: CstExprKind::String, expr_type: None,
                 line: self.previous.line, col: self.previous.column,
                 data: CstExprData::String(text),
+            });
+        }
+        if self.match_token(TokenKind::AtString) {
+            let text = self.previous_text().to_string();
+            return Some(CstExpr {
+                kind: CstExprKind::AtString, expr_type: None,
+                line: self.previous.line, col: self.previous.column,
+                data: CstExprData::AtString(text),
             });
         }
         if self.match_token(TokenKind::Char) {
@@ -1567,6 +1609,133 @@ impl<'a> Parser<'a> {
         })
     }
 
+    // ─── Inline assembly ────────────────────────────────────────────────────
+
+    fn parse_asm_statement(&mut self) -> Option<CstStmt> {
+        // `asm` keyword already consumed
+        let line = self.previous.line;
+        let column = self.previous.column;
+        let (is_volatile, is_goto, template, outputs, inputs, clobbers, labels) = self.parse_asm_body()?;
+        Some(CstStmt {
+            kind: CstStmtKind::Asm,
+            line, column,
+            data: CstStmtData::Asm { is_volatile, is_goto, template, outputs, inputs, clobbers, labels },
+        })
+    }
+
+    fn parse_asm_body(&mut self) -> Option<(bool, bool, String, Vec<CstAsmOperand>, Vec<CstAsmOperand>, Vec<String>, Vec<String>)> {
+        let is_volatile = self.match_keyword(KeywordKind::Volatile);
+        let has_goto = self.match_keyword(KeywordKind::Goto);
+        self.consume(TokenKind::LParen, "expected '(' after asm");
+        let template = self.parse_asm_template()?;
+        let mut outputs: Vec<CstAsmOperand> = Vec::new();
+        let mut inputs: Vec<CstAsmOperand> = Vec::new();
+        let mut clobbers: Vec<String> = Vec::new();
+        let mut labels: Vec<String> = Vec::new();
+        let mut sections = 0;
+        while self.match_token(TokenKind::Colon) {
+            sections += 1;
+            if self.check(TokenKind::Colon) { continue; }
+            if sections == 1 {
+                outputs = self.parse_asm_operands()?;
+            } else if sections == 2 {
+                inputs = self.parse_asm_operands()?;
+            } else if sections == 3 {
+                clobbers = self.parse_asm_clobbers()?;
+            } else if sections == 4 && has_goto {
+                labels = self.parse_asm_labels()?;
+            } else {
+                break;
+            }
+        }
+        self.consume(TokenKind::RParen, "expected ')' after asm");
+        self.consume(TokenKind::Semicolon, "expected ';' after asm");
+        Some((is_volatile, has_goto, template, outputs, inputs, clobbers, labels))
+    }
+
+    fn parse_asm_template(&mut self) -> Option<String> {
+        if !self.check(TokenKind::String) {
+            self.error("expected string literal in asm template");
+            return None;
+        }
+        let mut template = String::new();
+        while self.check(TokenKind::String) {
+            self.advance();
+            template.push_str(self.previous_text());
+        }
+        Some(template)
+    }
+
+    fn parse_asm_operands(&mut self) -> Option<Vec<CstAsmOperand>> {
+        let mut ops = Vec::new();
+        loop {
+            ops.push(self.parse_asm_operand()?);
+            if !self.match_token(TokenKind::Comma) { break; }
+        }
+        Some(ops)
+    }
+
+    fn parse_asm_operand(&mut self) -> Option<CstAsmOperand> {
+        let name = if self.match_token(TokenKind::LBracket) {
+            let n = if self.current.kind == TokenKind::Identifier {
+                let n = self.current_text().to_string();
+                self.advance();
+                n
+            } else {
+                String::new()
+            };
+            self.consume(TokenKind::RBracket, "expected ']' after asm operand name");
+            if n.is_empty() { None } else { Some(n) }
+        } else {
+            None
+        };
+        if !self.check(TokenKind::String) {
+            self.error("expected constraint string in asm operand");
+            return None;
+        }
+        self.advance();
+        let constraint = self.previous_text().to_string();
+        self.consume(TokenKind::LParen, "expected '(' after asm constraint");
+        let expr = match self.parse_expression() {
+            Some(e) => e,
+            None => {
+                self.error("expected expression in asm operand");
+                return None;
+            }
+        };
+        self.consume(TokenKind::RParen, "expected ')' after asm operand expression");
+        Some(CstAsmOperand { name, constraint, expr: Box::new(expr) })
+    }
+
+    fn parse_asm_clobbers(&mut self) -> Option<Vec<String>> {
+        let mut cl = Vec::new();
+        loop {
+            if !self.check(TokenKind::String) {
+                self.error("expected clobber string literal in asm");
+                return None;
+            }
+            self.advance();
+            cl.push(self.previous_text().to_string());
+            if !self.match_token(TokenKind::Comma) { break; }
+        }
+        Some(cl)
+    }
+
+    fn parse_asm_labels(&mut self) -> Option<Vec<String>> {
+        let mut labels = Vec::new();
+        loop {
+            if self.current.kind == TokenKind::Identifier {
+                labels.push(self.current_text().to_string());
+                self.advance();
+            } else {
+                self.error("expected identifier label in asm goto");
+                return None;
+            }
+            if !self.match_token(TokenKind::Comma) { break; }
+        }
+        Some(labels)
+    }
+
     fn parse_compound_statement(&mut self) -> Option<CstStmt> {
         self.consume(TokenKind::LBrace, "expected '{'");
         let mut stmts = Vec::new();
@@ -1586,6 +1755,24 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_statement(&mut self) -> Option<CstStmt> {
+        // Label: `ident:` at statement start (used by asm goto and plain C goto)
+        if self.current.kind == TokenKind::Identifier {
+            let after = self.current.start + self.current.length;
+            let rest = &self.source[after..];
+            let trimmed = rest.trim_start();
+            if trimmed.starts_with(':') && !trimmed.starts_with("::") {
+                let label = self.current_text().to_string();
+                let line = self.current.line;
+                let column = self.current.column;
+                self.advance();
+                self.consume(TokenKind::Colon, "expected ':' after label");
+                return Some(CstStmt {
+                    kind: CstStmtKind::Label,
+                    line, column,
+                    data: CstStmtData::Label(label),
+                });
+            }
+        }
         // Jump statements
         if self.match_keyword(KeywordKind::Return) {
             let expr = if !self.check(TokenKind::Semicolon) && !self.check(TokenKind::RBrace) {
@@ -1626,6 +1813,9 @@ impl<'a> Parser<'a> {
                 line: self.previous.line, column: self.previous.column,
                 data: CstStmtData::Goto(label),
             });
+        }
+        if self.match_keyword(KeywordKind::Asm) {
+            return self.parse_asm_statement();
         }
         if self.match_keyword(KeywordKind::AtThrow) {
             let expr = if !self.check(TokenKind::Semicolon) {
@@ -1704,16 +1894,10 @@ impl<'a> Parser<'a> {
         if self.match_keyword(KeywordKind::For) {
             self.consume(TokenKind::LParen, "expected '(' after for");
             let init = if !self.check(TokenKind::Semicolon) {
-                // Check for decl: type name = expr;
-                if self.current.kind == TokenKind::Keyword &&
-                   matches!(self.current.keyword,
-                    KeywordKind::Int | KeywordKind::Char | KeywordKind::Float |
-                    KeywordKind::Double | KeywordKind::Long | KeywordKind::Short |
-                    KeywordKind::Void | KeywordKind::Bool | KeywordKind::Id |
-                    KeywordKind::Class | KeywordKind::Sel | KeywordKind::Instancetype |
-                    KeywordKind::Const | KeywordKind::Struct | KeywordKind::Union |
-                    KeywordKind::Enum | KeywordKind::Signed | KeywordKind::Unsigned)
-                {
+                // Check for decl: type name = expr;  (uses the same declaration-start
+                // detection as regular statements, so class-name types like
+                // `Mini *c = [[Mini alloc] init]` are parsed as declarations)
+                if self.is_declaration_start() {
                     let decl = self.parse_declaration();
                     decl.map(|d| CstStmt {
                         kind: CstStmtKind::Decl,
@@ -2079,6 +2263,20 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_declaration(&mut self) -> Option<CstDecl> {
+        // Top-level inline assembly (file-scope asm)
+        if self.match_keyword(KeywordKind::Asm) {
+            let line = self.previous.line;
+            let column = self.previous.column;
+            let (is_volatile, is_goto, template, outputs, inputs, clobbers, labels) = self.parse_asm_body()?;
+            return Some(CstDecl {
+                kind: CstDeclKind::Asm,
+                line, column,
+                name: None,
+                next: None,
+                data: CstDeclData::Asm { is_volatile, is_goto, template, outputs, inputs, clobbers, labels },
+            });
+        }
+
         // @interface / @implementation / @protocol / @class / @namespace / @using
         if self.current.kind == TokenKind::Keyword {
             match self.current.keyword {
@@ -2130,12 +2328,28 @@ impl<'a> Parser<'a> {
                 // By reconstructing the type from what we've consumed
                 let struct_type = CstType {
                     prim: TypePrim::Named, is_pointer: false, is_struct: true,
-                    name: Some(name), subtype: None, next: None,
+                    name: Some(name.clone()), subtype: None, next: None,
                     block_params: None, is_const: false, is_block: false,
                     is_array: false, array_size: 0, is_volatile: false,
                     is_block_qual: false, is_weak_qual: false, is_unsigned: false,
                     block_name: None, protocols: Vec::new(), type_args: Vec::new(),
-                    array_size_name: None,
+                    array_size_name: None, is_fn_ptr: false,
+                };
+                // `struct Name *p`, `struct Name **p`, `struct Name *arr[]` —
+                // consume the pointer suffix(es) so the declared variable gets
+                // the right pointer type (otherwise `struct Name *p` falls out
+                // of the declaration path entirely).
+                let struct_type = {
+                    let mut t = struct_type;
+                    while self.match_token(TokenKind::Star) {
+                        let mut ptr = CstType::new(TypePrim::Named);
+                        ptr.is_pointer = true;
+                        ptr.is_struct = true;
+                        ptr.name = Some(name.clone());
+                        ptr.subtype = Some(Box::new(t));
+                        t = ptr;
+                    }
+                    t
                 };
                 // Continue to regular declaration parsing with struct_type as the return type
                 // (falls through to lines 1892+)
@@ -2572,6 +2786,7 @@ impl<'a> Parser<'a> {
                         data: CstDeclData::Ivar {
                             ivar_type: Some(Box::new(field_type)),
                             iboutlet: false,
+                            is_weak: false,
                         },
                     });
                 }
@@ -2588,6 +2803,7 @@ impl<'a> Parser<'a> {
                             data: CstDeclData::Ivar {
                                 ivar_type: None,
                                 iboutlet: false,
+                                is_weak: false,
                             },
                         });
                     }
@@ -2605,10 +2821,9 @@ impl<'a> Parser<'a> {
                 // skip
             }
         }
-        self.consume(TokenKind::RBrace, "expected '}' after struct");
+                self.consume(TokenKind::RBrace, "expected '}' after struct");
         Some(fields)
     }
-
     fn parse_enum(&mut self) -> Option<CstDecl> {
         let mut members = Vec::new();
         let mut values = Vec::new();
@@ -2783,13 +2998,14 @@ impl<'a> Parser<'a> {
                     continue;
                 }
                 // ivar attribute parens: `@public (weak) DirectoryNode *_parent;`
-                // Consume the parenthesized qualifier list so the following type
-                // declaration parses cleanly. Previously the `(` landed at the
-                // method-declaration path (`parse_declaration` saw `(` as a method
-                // return-type group) and errored with
-                // `expected ';' after ivar (got '(')`.
+                // Parse the qualifier list to detect `weak`.
+                let mut is_weak = false;
                 if self.match_token(TokenKind::LParen) {
                     while !self.check(TokenKind::RParen) && !self.check(TokenKind::Eof) {
+                        if (self.current.kind == TokenKind::Identifier || self.current.kind == TokenKind::Keyword)
+                            && self.current_text() == "weak" {
+                            is_weak = true;
+                        }
                         self.advance();
                     }
                     self.consume(TokenKind::RParen, "expected ')' after ivar qualifier");
@@ -2832,6 +3048,7 @@ impl<'a> Parser<'a> {
                             data: CstDeclData::Ivar {
                                 ivar_type: Some(Box::new(final_type)),
                                 iboutlet,
+                                is_weak,
                             },
                         });
                         if !self.match_token(TokenKind::Comma) { break; }

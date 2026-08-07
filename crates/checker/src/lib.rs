@@ -58,6 +58,11 @@ impl Checker {
                 t.is_pointer = true;
                 Some(t)
             }
+            AstExprData::AtString(_) => {
+                let mut t = AstType::new(TypePrim::Id);
+                t.is_pointer = true;
+                Some(t)
+            }
             AstExprData::Char(_) => Some(AstType::new(TypePrim::Char)),
             AstExprData::Bool(_) => Some(AstType::new(TypePrim::Bool)),
             AstExprData::VarRef { name, .. } => {

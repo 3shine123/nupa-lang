@@ -22,7 +22,14 @@ NUPAC = PROJECT / "target" / "debug" / "nupac"
 RUN_TIMEOUT = 3
 
 # ── Collect test binary names from .np files ──
-NP_FILES = sorted(Path(__file__).resolve().parent.glob("tests/**/*.np"))
+def _np_suite_files() -> list[Path]:
+    """All host-run .np tests, excluding out-of-band suites (QEMU kernel, cross-arch, freestanding)."""
+    return sorted(
+        p for p in PROJECT.glob("tests/**/*.np")
+        if "soma-kernel" not in p.parts and "25_freestanding" not in p.parts and "26_baremetal_stress" not in p.parts
+    )
+
+NP_FILES = _np_suite_files()
 TEST_BINS = set()
 for f in NP_FILES:
     stem = f.stem
@@ -165,15 +172,24 @@ def process_np(np_file: str, tmpdir: Path) -> tuple[str, bool, list[str], str]:
     Returns (relative_path, passed, info_lines, status_tag).
     """
     np_path = Path(np_file)
-    rel = str(np_path.relative_to(PROJECT / "tests"))
+    try:
+        rel = str(np_path.relative_to(PROJECT / "tests"))
+    except ValueError:
+        rel = str(np_path.relative_to(PROJECT))
     proc = None
 
     # Skip module-only files (no main entry); they're meant to be #import'd
     if not _has_main(np_path):
         return rel, False, ["FAIL (no main entry)"], "FAIL"
 
+    # Auto-include sibling .s assembly files: `name.s` linked alongside `name.np`
+    asm_args: list[str] = []
+    sibling_s = np_path.with_suffix(".s")
+    if sibling_s.exists():
+        asm_args = ["-asm", str(sibling_s)]
+
     # Try with ARC first
-    cmd = [str(NUPAC), "run", str(np_path)]
+    cmd = [str(NUPAC), "run", str(np_path)] + asm_args
     stdout, stderr, rc, timed_out = _run_np(cmd, np_path, RUN_TIMEOUT + 2)
 
     if timed_out:
@@ -184,7 +200,7 @@ def process_np(np_file: str, tmpdir: Path) -> tuple[str, bool, list[str], str]:
         return rel, True, out_lines, "PASS"
 
     # ARC failed — retry with MRC
-    mrc_cmd = [str(NUPAC), "run", str(np_path), "-fno-nupa-arc"]
+    mrc_cmd = [str(NUPAC), "run", str(np_path), "-fno-nupa-arc"] + asm_args
     mrc_stdout, mrc_stderr, mrc_rc, mrc_timed_out = _run_np(mrc_cmd, np_path, RUN_TIMEOUT + 2)
 
     if mrc_timed_out:
@@ -238,18 +254,15 @@ def main():
                 console.print(f"       [dim]{l.strip()[:72]}[/]")
     console.print(f"\n  [bold]{unit_pass}/{unit_pass + unit_fail}[/] unit tests passed, [red]{unit_fail}[/] failed")
 
-    # ── 2. NP tests ──
+# ── 2. NP tests ──
     console.rule(f"[bold]NP Tests  (parallel x{JOBS})")
-    np_files = sorted(PROJECT.glob("tests/**/*.np"))
-    np_total = len(np_files)
-    if np_total == 0:
-        console.print("  [yellow]No .np files found.[/]")
-    else:
+    np_files = _np_suite_files()
+    np_pass = 0
+    np_fail = 0
+    np_canceled = 0
+    if np_files:
         with tempfile.TemporaryDirectory(prefix="nupa_test_") as tmpdir_str:
             tmpdir = Path(tmpdir_str)
-            np_pass = 0
-            np_fail = 0
-            np_canceled = 0
             with ThreadPoolExecutor(max_workers=JOBS) as executor:
                 futures = {executor.submit(process_np, str(f), tmpdir): f for f in np_files}
                 for future in as_completed(futures):
@@ -262,14 +275,46 @@ def main():
                         np_fail += 1
                     console.print(panel(rel, lines, tag))
             canceled_str = f", [yellow]{np_canceled} canceled[/]" if np_canceled else ""
-            console.print(f"\n  [bold]{np_pass}/{np_total}[/] .np files passed, [red]{np_fail}[/] failed{canceled_str}")
+            console.print(f"\n  [bold]{np_pass}/{len(np_files)}[/] .np files passed, [red]{np_fail}[/] failed{canceled_str}")
+    else:
+        console.print("  [yellow]No .np files found.[/]")
+
+    # ── 3. Examples ──
+    console.rule(f"[bold]Examples  (parallel x{JOBS})")
+    example_files = sorted(
+        p for p in PROJECT.glob("examples/**/*.np")
+        if "04_soma-kernel" not in p.parts
+        and "02_ncurses" not in p.parts
+        and "03_LibUI" not in p.parts
+    )
+    ex_pass = 0
+    ex_fail = 0
+    ex_canceled = 0
+    if example_files:
+        with tempfile.TemporaryDirectory(prefix="nupa_example_") as tmpdir_str:
+            tmpdir = Path(tmpdir_str)
+            with ThreadPoolExecutor(max_workers=JOBS) as executor:
+                futures = {executor.submit(process_np, str(f), tmpdir): f for f in example_files}
+                for future in as_completed(futures):
+                    rel, ok, lines, tag = future.result()
+                    if tag == "CANCELED":
+                        ex_canceled += 1
+                    elif ok:
+                        ex_pass += 1
+                    else:
+                        ex_fail += 1
+                    console.print(panel(rel, lines, tag))
+            canceled_str = f", [yellow]{ex_canceled} canceled[/]" if ex_canceled else ""
+            console.print(f"\n  [bold]{ex_pass}/{len(example_files)}[/] examples passed, [red]{ex_fail}[/] failed{canceled_str}")
+    else:
+        console.print("  [yellow]No example .np files found.[/]")
 
     # ── Grand total ──
     elapsed = time.time() - start
-    total_fail = unit_fail + np_fail
-    total_pass = unit_pass + np_pass
-    total = unit_pass + unit_fail + np_pass + np_fail + np_canceled
-    canceled_str = f", [yellow]{np_canceled} canceled[/]" if np_canceled else ""
+    total_fail = unit_fail + np_fail + ex_fail
+    total_pass = unit_pass + np_pass + ex_pass
+    total = unit_pass + unit_fail + np_pass + np_fail + np_canceled + ex_pass + ex_fail + ex_canceled
+    canceled_str = f", [yellow]{np_canceled + ex_canceled} canceled[/]" if np_canceled + ex_canceled else ""
     color = "green" if total_fail == 0 else "red"
     console.rule(f"[bold {color}]GRAND TOTAL: {total_pass}/{total} passed, {total_fail} failed{canceled_str}  ({elapsed:.0f}s)")
     sys.exit(total_fail)

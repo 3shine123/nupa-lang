@@ -1,18 +1,13 @@
 #include <stdio.h>
+#include <stdlib.h>
 #import <Foundation/Foundation.nh>
-
-@interface Printer : NPObject
-- (void)print:(char *)msg;
-@end
-
-@implementation Printer
-- (void)print:(char *)msg {
-    printf("%s\n", msg);
-}
-@end
+#import <Foundation/NPString.nh>
+#import <Foundation/NPString.np>
 
 int main() {
-    Printer *p = [[Printer alloc] init];
-    [p print:@"Hello from Micrit!"];
+    @autoreleasepool {
+        NPString *s = @"Hello from Micrit!";
+        printf("%s\n", [s UTF8String]);
+    }
     return 0;
 }

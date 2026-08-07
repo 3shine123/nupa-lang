@@ -10,6 +10,7 @@ pub enum TokenKind {
     Integer,
     Float,
     String,
+    AtString,
     Char,
     Bool,
 
@@ -184,6 +185,8 @@ pub enum KeywordKind {
     Elif,
     Undef,
 
+    Asm,
+
     None,
 }
 
@@ -212,6 +215,7 @@ impl fmt::Display for TokenKind {
             TokenKind::Integer => write!(f, "integer"),
             TokenKind::Float => write!(f, "float"),
             TokenKind::String => write!(f, "string"),
+            TokenKind::AtString => write!(f, "at-string"),
             TokenKind::Char => write!(f, "char"),
             TokenKind::Bool => write!(f, "bool"),
             TokenKind::Plus => write!(f, "'+'"),
