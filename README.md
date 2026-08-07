@@ -13,6 +13,16 @@
 
 ---
 
+> ⚠️Warning
+> **The GitHub Releases page lags behind the source code.** The releases shown
+> on the GitHub website are usually *older* than what's pushed to the `main`
+> branch — I often forget to cut a new release after pushing new commits. If you
+> want the latest features and fixes, **clone the repo and build from source**
+> (see [Build](#build)); only use the downloaded releases if you prefer the
+> stable, older snapshot.
+
+---
+
 ## **Overview**
 
 Nupa is a **purely static** Objective-C dialect (C superset language). Nupa source is transpiled to C99, then compiled to native machine code by Clang. No runtime message forwarding, no GC pauses, no JIT warm-up — all method dispatch, memory management, and polymorphism are resolved at compile time. It currently works — there are games and tools running in it. If you find it interesting, feel free to give it a try.
