@@ -3,6 +3,10 @@
 #include <string.h>
 #include <stdio.h>
 
+// ─── NUPA_CLASS_$_nupa_root (defined weak; codegen's nupa_metaInit fills it) ──
+
+NPClass NUPA_CLASS_$_nupa_root;
+
 // ─── Exception globals ────────────────────────────────────────────────────────
 
 #ifdef __NUPA_FREESTANDING
@@ -36,7 +40,7 @@ static WeakEntry *find_entry(NPObject *target) {
     return NULL;
 }
 
-void nupa_weak_register(NPObject **weak_loc, NPObject *target) {
+void nupa_weakRegister(NPObject **weak_loc, NPObject *target) {
     if (!target || !weak_loc) return;
     WeakEntry *entry = find_entry(target);
     if (!entry) {
@@ -54,7 +58,7 @@ void nupa_weak_register(NPObject **weak_loc, NPObject *target) {
     entry->slots[entry->count++] = weak_loc;
 }
 
-void nupa_weak_unregister(NPObject **weak_loc) {
+void nupa_weakUnregister(NPObject **weak_loc) {
     if (!weak_loc) return;
     for (int i = 0; i < weak_entries; i++) {
         WeakEntry *entry = &weak_table[i];
@@ -67,7 +71,7 @@ void nupa_weak_unregister(NPObject **weak_loc) {
     }
 }
 
-void nupa_weak_clear_all(NPObject *target) {
+void nupa_weakClearAll(NPObject *target) {
     if (!target) return;
     for (int i = 0; i < weak_entries; i++) {
         WeakEntry *entry = &weak_table[i];
@@ -82,8 +86,8 @@ void nupa_weak_clear_all(NPObject *target) {
     }
 }
 
-void nupa_weak_auto_cleanup(void *ptr) {
-    nupa_weak_unregister((NPObject **)ptr);
+void nupa_weakAutoCleanup(void *ptr) {
+    nupa_weakUnregister((NPObject **)ptr);
 }
 
 // ─── Selectors ───────────────────────────────────────────────────────────────
@@ -108,6 +112,35 @@ BOOL nupa_isKindOf(NPObject *obj, NPClass *cls) {
         isa = isa->superclass;
     }
     return 0;
+}
+
+// ─── Autorelease pool ─────────────────────────────────────────────────────────
+
+struct nupa_autoreleasepool {
+    struct nupa_autoreleasepool *next;
+    NPObject **objects;
+    int count;
+    int capacity;
+};
+
+static __thread nupa_autoreleasepool_t *current_pool = NULL;
+
+nupa_autoreleasepool_t *nupa_autoreleasepoolPush(void) {
+    nupa_autoreleasepool_t *pool = calloc(1, sizeof(nupa_autoreleasepool_t));
+    if (!pool) return NULL;
+    pool->next = current_pool;
+    current_pool = pool;
+    return pool;
+}
+
+void nupa_autoreleasepoolPop(nupa_autoreleasepool_t *pool) {
+    if (!pool) return;
+    for (int i = 0; i < pool->count; i++) {
+        nupa_release(pool->objects[i]);
+    }
+    free(pool->objects);
+    current_pool = pool->next;
+    free(pool);
 }
 
 // ─── Lifecycle ───────────────────────────────────────────────────────────────
@@ -137,35 +170,34 @@ void nupa_release(NPObject *obj) {
     if (obj->retain_count > 0)
         obj->retain_count--;
     if (obj->retain_count == 0) {
-        nupa_weak_clear_all(obj);
+        // Zero weak references BEFORE dealloc: dealloc may free other objects
+        // (strong ivars) whose memory holds a weak slot pointing back to us
+        // (e.g. a child's `__weak parent`). Zeroing first avoids a use-after-free.
+        nupa_weakClearAll(obj);
+        // Call dealloc so ivar cleanup runs. dealloc's `[super dealloc]` calls
+        // the parent's dealloc directly (not nupa_release), so no double-free.
+        if (obj->isa && obj->isa->dealloc) {
+            obj->isa->dealloc(obj, (SEL){ .name = "dealloc", .hash = 0xD9929EB3 });
+        }
         free(obj);
     }
 }
 
 NPObject *nupa_autorelease(NPObject *obj) {
+    if (!obj) return obj;
+    nupa_autoreleasepool_t *pool = current_pool;
+    if (!pool) return obj;
+    if (pool->count >= pool->capacity) {
+        pool->capacity = pool->capacity ? pool->capacity * 2 : 16;
+        pool->objects = realloc(pool->objects, pool->capacity * sizeof(NPObject *));
+        if (!pool->objects) return obj;
+    }
+    pool->objects[pool->count++] = obj;
     return obj;
 }
 
-// ─── Autorelease pool ─────────────────────────────────────────────────────────
-
-struct nupa_autoreleasepool {
-    struct nupa_autoreleasepool *next;
-};
-
-nupa_autoreleasepool_t *nupa_autoreleasepool_push(void) {
-    nupa_autoreleasepool_t *pool = malloc(sizeof(nupa_autoreleasepool_t));
-    if (pool) {
-        pool->next = NULL;
-    }
-    return pool;
-}
-
-void nupa_autoreleasepool_pop(nupa_autoreleasepool_t *pool) {
-    free(pool);
-}
-
 // ─── String literals ──────────────────────────────────────────────────────────
-// nupa_string_from_cstr is emitted by the codegen in the generated C code.
+// nupa_stringFromCstr is emitted by the codegen in the generated C code.
 // The runtime.h declaration is used by the generated code to call it.
 // When NPString is not present, @"..." falls back to a regular C string literal.
 

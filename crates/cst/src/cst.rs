@@ -62,7 +62,7 @@ pub enum CstExprKind {
     ArrayLit, DictLit, NumberLit,
     Block, InitList,
     Unary, Binary, Ternary, Assign,
-    Conditional, Cast, Sizeof, Typeof,
+    Conditional, Cast, Sizeof, Typeof, Alignof,
     MessageSend, DotAccess, Arrow, Subscript,
     Call, Comma, Paren,
 }
@@ -182,6 +182,7 @@ pub enum CstExprData {
         type_expr: CstType,
         expr: Option<Box<CstExpr>>,
     },
+    Alignof(CstType),
     Typeof(CstType),
     Paren(Box<CstExpr>),
 }
@@ -279,6 +280,8 @@ pub struct CstDecl {
     pub name: Option<String>,
     pub next: Option<Box<CstDecl>>,
     pub data: CstDeclData,
+    /// Raw `__attribute__((...))` spellings (e.g. `packed`, `format(printf, 1, 2)`).
+    pub attributes: Vec<String>,
 }
 
 #[derive(Debug, Clone)]

@@ -53,6 +53,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "attrs"
+version = "0.1.0"
+
+[[package]]
 name = "cc"
 version = "1.2.67"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -162,6 +166,7 @@ dependencies = [
 name = "nupa-codegen"
 version = "0.1.0"
 dependencies = [
+ "attrs",
  "nupa-ast",
  "nupa-cst",
  "nupa-elaborator",
@@ -227,6 +232,7 @@ dependencies = [
 name = "nupac"
 version = "0.1.0"
 dependencies = [
+ "attrs",
  "cc",
  "clap",
  "clap_complete",

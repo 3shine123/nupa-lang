@@ -291,6 +291,27 @@ impl<'a> Parser<'a> {
                     t.name = Some(self.previous_text().to_string());
                 }
             }
+else if self.match_keyword(KeywordKind::Typeof) {
+                // `typeof ( expr )` / `typeof ( type )` — capture raw text so it
+                // passes through to C verbatim (e.g. `__typeof__(x) z = 2;`).
+                let start = self.previous.start;
+                self.consume(TokenKind::LParen, "expected '(' after typeof");
+                let mut depth = 1;
+                while depth > 0 {
+                    if self.current.kind == TokenKind::Eof { break; }
+                    if self.current.kind == TokenKind::LParen { depth += 1; }
+                    else if self.current.kind == TokenKind::RParen {
+                        depth -= 1;
+                        if depth == 0 { break; }
+                    }
+                    self.advance();
+                }
+                let end = self.current.start + self.current.length;
+                self.consume(TokenKind::RParen, "expected ')' after typeof");
+                let raw = &self.source[start..end];
+                t.prim = TypePrim::Named;
+                t.name = Some(raw.to_string());
+            }
             else if self.current.kind == TokenKind::Identifier {
                 let tname = self.current_text().to_string();
                 if self.is_type_param(&tname) {
@@ -561,6 +582,11 @@ impl<'a> Parser<'a> {
     // ─── Expression parsing ──────────────────────────────────────────────
 
     fn parse_primary(&mut self) -> Option<CstExpr> {
+        if self.match_keyword(KeywordKind::Extension) {
+            // __extension__ is a prefix that suppresses pedantic warnings.
+            // Skip it and parse the underlying expression.
+            return self.parse_primary();
+        }
         if self.match_token(TokenKind::Identifier) {
             let text = self.previous_text().to_string();
             let line = self.previous.line;
@@ -1357,6 +1383,19 @@ impl<'a> Parser<'a> {
                 });
             }
         }
+        // __alignof__ / __alignof(type)
+        if self.match_keyword(KeywordKind::Alignof) {
+            if self.match_token(TokenKind::LParen) {
+                if let Some(ty) = self.parse_type_full() {
+                    self.consume(TokenKind::RParen, "expected ')' after alignof");
+                    return Some(CstExpr {
+                        kind: CstExprKind::Alignof, expr_type: None,
+                        line: self.previous.line, col: self.previous.column,
+                        data: CstExprData::Alignof(ty),
+                    });
+                }
+            }
+        }
         self.parse_postfix()
     }
 
@@ -2119,7 +2158,8 @@ impl<'a> Parser<'a> {
                 KeywordKind::Volatile | KeywordKind::Auto | KeywordKind::Register |
                 KeywordKind::Inline | KeywordKind::Restrict |
                 KeywordKind::Block | KeywordKind::Weak | KeywordKind::Strong |
-                KeywordKind::Autoreleasing | KeywordKind::UnsafeUnretained => true,
+                KeywordKind::Autoreleasing | KeywordKind::UnsafeUnretained |
+                KeywordKind::Typeof | KeywordKind::Extension => true,
                 // id/Class/Sel/Instancetype are type keywords that can also be variable names
                 // Peek at next non-space char to disambiguate:
                 //   id obj = ... → next char is identifier → declaration
@@ -2259,10 +2299,80 @@ impl<'a> Parser<'a> {
                 has_variadic,
                 body,
             },
-        })
+                    attributes: Vec::new(),
+})
     }
 
     fn parse_declaration(&mut self) -> Option<CstDecl> {
+        // Capture leading `__attribute__((...))` spellings before parsing the
+        // declaration itself, so they travel through CST/AST to the C output.
+        let attrs = self.parse_attributes();
+        let mut decl = self.parse_declaration_inner()?;
+        decl.attributes = attrs;
+        Some(decl)
+    }
+
+    /// Consume one or more `__attribute__((...))` groups, returning the raw
+    /// inner attribute spellings (e.g. `packed`, `aligned(8)`).
+    fn parse_attributes(&mut self) -> Vec<String> {
+        let mut attrs = Vec::new();
+        loop {
+            let is_attr = self.current.kind == TokenKind::Identifier
+                && (self.current_text() == "__attribute__" || self.current_text() == "__attribute");
+            if !is_attr {
+                break;
+            }
+            self.advance();
+            if !self.match_token(TokenKind::LParen) {
+                break;
+            }
+            if !self.match_token(TokenKind::LParen) {
+                break;
+            }
+            let mut parts: Vec<String> = Vec::new();
+            let mut cur = String::new();
+            let mut depth = 0;
+            loop {
+                if self.current.kind == TokenKind::Eof {
+                    break;
+                }
+                if self.match_token(TokenKind::LParen) {
+                    depth += 1;
+                    cur.push_str("(");
+                } else if self.current.kind == TokenKind::RParen {
+                    if depth == 0 {
+                        self.advance();
+                        break;
+                    }
+                    depth -= 1;
+                    self.advance();
+                    cur.push_str(")");
+                } else if self.current.kind == TokenKind::Comma && depth == 0 {
+                    self.advance();
+                    parts.push(cur.trim().to_string());
+                    cur.clear();
+                } else {
+                    cur.push_str(self.current_text());
+                    cur.push(' ');
+                    self.advance();
+                }
+            }
+            parts.push(cur.trim().to_string());
+            for p in parts {
+                if !p.is_empty() {
+                    attrs.push(p);
+                }
+            }
+            self.match_token(TokenKind::RParen);
+        }
+        attrs
+    }
+
+    fn parse_declaration_inner(&mut self) -> Option<CstDecl> {
+        // __extension__ suppresses pedantic warnings — skip it and continue.
+        if self.match_keyword(KeywordKind::Extension) {
+            return self.parse_declaration_inner();
+        }
         // Top-level inline assembly (file-scope asm)
         if self.match_keyword(KeywordKind::Asm) {
             let line = self.previous.line;
@@ -2274,7 +2384,8 @@ impl<'a> Parser<'a> {
                 name: None,
                 next: None,
                 data: CstDeclData::Asm { is_volatile, is_goto, template, outputs, inputs, clobbers, labels },
-            });
+                            attributes: Vec::new(),
+});
         }
 
         // @interface / @implementation / @protocol / @class / @namespace / @using
@@ -2310,7 +2421,8 @@ impl<'a> Parser<'a> {
                         name: Some(name),
                         next: None,
                         data: CstDeclData::Aggregate { fields, is_union },
-                    });
+                                            attributes: Vec::new(),
+});
                 }
                 if self.check(TokenKind::Semicolon) {
                     self.advance();
@@ -2320,7 +2432,8 @@ impl<'a> Parser<'a> {
                         name: Some(name),
                         next: None,
                         data: CstDeclData::Aggregate { fields: Vec::new(), is_union },
-                    });
+                                            attributes: Vec::new(),
+});
                 }
                 // struct Name var = ... — fall through to regular declaration parsing
                 // Restore struct/name tokens so parse_type_full can handle it
@@ -2374,7 +2487,8 @@ impl<'a> Parser<'a> {
                             is_block_qual: qualifiers.3,
                             is_weak: qualifiers.4,
                         },
-                    };
+                                            attributes: Vec::new(),
+};
                     // Array suffix
                     if self.match_token(TokenKind::LBracket) {
                         let mut array_type = CstType::new(TypePrim::Named);
@@ -2419,7 +2533,8 @@ impl<'a> Parser<'a> {
                                     is_block_qual: qualifiers.3,
                                     is_weak: qualifiers.4,
                                 },
-                            };
+                                                            attributes: Vec::new(),
+};
                             if self.match_token(TokenKind::Assign) {
                                 if let CstDeclData::Variable { ref mut initializer, .. } = next_var.data {
                                     *initializer = self.parse_assignment().map(Box::new);
@@ -2444,7 +2559,8 @@ impl<'a> Parser<'a> {
                     name: None,
                     next: None,
                     data: CstDeclData::Aggregate { fields, is_union },
-                });
+                                    attributes: Vec::new(),
+});
             }
             return None;
         }
@@ -2496,7 +2612,8 @@ impl<'a> Parser<'a> {
                     is_block_qual: qualifiers.3,
                     is_weak: qualifiers.4,
                 },
-            };
+                            attributes: Vec::new(),
+};
 
             // Array suffix: name[size]
             if self.match_token(TokenKind::LBracket) {
@@ -2547,7 +2664,8 @@ impl<'a> Parser<'a> {
                             is_block_qual: qualifiers.3,
                             is_weak: qualifiers.4,
                         },
-                    };
+                                            attributes: Vec::new(),
+};
                     if self.match_token(TokenKind::Assign) {
                         if let CstDeclData::Variable { ref mut initializer, .. } = next_var.data {
                             *initializer = self.parse_assignment().map(Box::new);
@@ -2639,7 +2757,8 @@ impl<'a> Parser<'a> {
                                 })),
                                 struct_fields: struct_decl,
                             },
-                        });
+                                                    attributes: Vec::new(),
+});
                     }
                     self.consume(TokenKind::Semicolon, "expected ; after struct");
                     return Some(CstDecl {
@@ -2648,7 +2767,8 @@ impl<'a> Parser<'a> {
                         name: Some(name),
                         next: None,
                         data: CstDeclData::Aggregate { fields: struct_decl, is_union },
-                    });
+                                            attributes: Vec::new(),
+});
                 }
                 // Forward declaration
                 self.consume(TokenKind::Semicolon, "expected ; after struct name");
@@ -2658,7 +2778,8 @@ impl<'a> Parser<'a> {
                     name: Some(name),
                     next: None,
                     data: CstDeclData::Aggregate { fields: Vec::new(), is_union },
-                });
+                                    attributes: Vec::new(),
+});
             }
             // Anonymous struct/union
             if self.check(TokenKind::LBrace) {
@@ -2677,7 +2798,8 @@ impl<'a> Parser<'a> {
                             alias_type: None,
                             struct_fields: fields,
                         },
-                    });
+                                            attributes: Vec::new(),
+});
                 }
                 self.consume(TokenKind::Semicolon, "expected ; after struct");
                 return Some(CstDecl {
@@ -2686,7 +2808,8 @@ impl<'a> Parser<'a> {
                     name: None,
                     next: None,
                     data: CstDeclData::Aggregate { fields, is_union },
-                });
+                                    attributes: Vec::new(),
+});
             }
             self.consume(TokenKind::Semicolon, "expected ; after struct");
             return None;
@@ -2734,7 +2857,8 @@ impl<'a> Parser<'a> {
                         alias_type: Some(Box::new(at.clone())),
                         struct_fields: Vec::new(),
                     },
-                });
+                                    attributes: Vec::new(),
+});
             }
         }
         if self.current.kind == TokenKind::Identifier {
@@ -2751,7 +2875,8 @@ impl<'a> Parser<'a> {
                     alias_type: alias_type.map(Box::new),
                     struct_fields: Vec::new(),
                 },
-            });
+                            attributes: Vec::new(),
+});
         }
         self.consume(TokenKind::Semicolon, "expected ; after typedef");
         None
@@ -2761,6 +2886,7 @@ impl<'a> Parser<'a> {
         self.advance(); // consume {
         let mut fields = Vec::new();
         while !self.check(TokenKind::RBrace) && !self.check(TokenKind::Eof) {
+            self.match_keyword(KeywordKind::Extension); // __extension__ prefix
             if let Some(ftype) = self.parse_type_full() {
                 if self.current.kind == TokenKind::Identifier {
                     let fname = self.current_text().to_string();
@@ -2778,6 +2904,7 @@ impl<'a> Parser<'a> {
                         field_type = array_type;
                         self.consume(TokenKind::RBracket, "expected ']'");
                     }
+                    let field_attrs = self.parse_attributes();
                     fields.push(CstDecl {
                         kind: CstDeclKind::Ivar,
                         line: self.previous.line, column: self.previous.column,
@@ -2788,13 +2915,15 @@ impl<'a> Parser<'a> {
                             iboutlet: false,
                             is_weak: false,
                         },
-                    });
+                        attributes: field_attrs,
+});
                 }
                 // Handle comma-separated fields
                 while self.match_token(TokenKind::Comma) {
                     if self.current.kind == TokenKind::Identifier {
                         let fname = self.current_text().to_string();
                         self.advance();
+                        let field_attrs = self.parse_attributes();
                         fields.push(CstDecl {
                             kind: CstDeclKind::Ivar,
                             line: self.previous.line, column: self.previous.column,
@@ -2805,7 +2934,8 @@ impl<'a> Parser<'a> {
                                 iboutlet: false,
                                 is_weak: false,
                             },
-                        });
+                            attributes: field_attrs,
+});
                     }
                 }
             } else if !self.check(TokenKind::Semicolon) && !self.check(TokenKind::RBrace) {
@@ -2849,7 +2979,8 @@ impl<'a> Parser<'a> {
                     name,
                     next: None,
                     data: CstDeclData::Enum { members, values },
-                });
+                                    attributes: Vec::new(),
+});
             }
         }
         // Body: `{ member = value, ... }` — tagged or anonymous
@@ -2890,7 +3021,8 @@ impl<'a> Parser<'a> {
                 name,
                 next: None,
                 data: CstDeclData::Enum { members, values },
-            });
+                            attributes: Vec::new(),
+});
         }
         None
     }
@@ -2997,6 +3129,7 @@ impl<'a> Parser<'a> {
                    self.match_keyword(KeywordKind::AtPackage) {
                     continue;
                 }
+                self.match_keyword(KeywordKind::Extension); // __extension__ prefix
                 // ivar attribute parens: `@public (weak) DirectoryNode *_parent;`
                 // Parse the qualifier list to detect `weak`.
                 let mut is_weak = false;
@@ -3050,7 +3183,8 @@ impl<'a> Parser<'a> {
                                 iboutlet,
                                 is_weak,
                             },
-                        });
+                                                    attributes: Vec::new(),
+});
                         if !self.match_token(TokenKind::Comma) { break; }
                     }
                 }
@@ -3159,7 +3293,8 @@ impl<'a> Parser<'a> {
                 methods,
                 impl_vars: Vec::new(),
             },
-        })
+                    attributes: Vec::new(),
+})
     }
 
     fn parse_class_implementation(&mut self) -> Option<CstDecl> {
@@ -3264,7 +3399,8 @@ impl<'a> Parser<'a> {
                 methods,
                 impl_vars,
             },
-        })
+                    attributes: Vec::new(),
+})
     }
 
     fn parse_property(&mut self) -> Option<CstDecl> {
@@ -3350,7 +3486,8 @@ impl<'a> Parser<'a> {
                         is_nonatomic,
                         is_dynamic: false,
                     },
-                };
+                                    attributes: Vec::new(),
+};
                 let mut tail = &mut head;
                 while self.match_name() {
                     let nname = self.previous_text().to_string();
@@ -3371,7 +3508,8 @@ impl<'a> Parser<'a> {
                             is_nonatomic,
                             is_dynamic: false,
                         },
-                    }));
+                                            attributes: Vec::new(),
+}));
                     tail = tail.next.as_mut().unwrap();
                     if !self.match_token(TokenKind::Comma) { break; }
                 }
@@ -3396,7 +3534,8 @@ impl<'a> Parser<'a> {
                     is_nonatomic,
                     is_dynamic: false,
                 },
-            });
+                            attributes: Vec::new(),
+});
         }
         self.consume(TokenKind::Semicolon, "expected ';' after @property");
         None
@@ -3564,7 +3703,8 @@ impl<'a> Parser<'a> {
                 params,
                 body,
             },
-        })
+                    attributes: Vec::new(),
+})
     }
 
     fn parse_protocol(&mut self) -> Option<CstDecl> {
@@ -3610,7 +3750,8 @@ impl<'a> Parser<'a> {
             name: Some(name),
             next: None,
             data: CstDeclData::ProtocolData { protocols, methods, is_optional },
-        })
+                    attributes: Vec::new(),
+})
     }
 
     fn parse_forward_class(&mut self) -> Option<CstDecl> {
@@ -3631,7 +3772,8 @@ impl<'a> Parser<'a> {
             name: None,
             next: None,
             data: CstDeclData::Forward(names),
-        })
+                    attributes: Vec::new(),
+})
     }
 
     fn parse_namespace(&mut self) -> Option<CstDecl> {
@@ -3658,7 +3800,8 @@ impl<'a> Parser<'a> {
             name: Some(name),
             next: None,
             data: CstDeclData::Namespace(decls),
-        })
+                    attributes: Vec::new(),
+})
     }
 
     fn parse_using(&mut self) -> Option<CstDecl> {
@@ -3678,7 +3821,8 @@ impl<'a> Parser<'a> {
                         name: None,
                         next: None,
                         data: CstDeclData::Using { fqn, alias: None },
-                    });
+                                            attributes: Vec::new(),
+});
                 }
             }
             self.consume(TokenKind::Semicolon, "expected ';' after @using namespace");
@@ -3735,7 +3879,8 @@ impl<'a> Parser<'a> {
             name: None,
             next: None,
             data: CstDeclData::Using { fqn, alias },
-        })
+                    attributes: Vec::new(),
+})
     }
 
     // ─── Top-level ──────────────────────────────────────────────────────

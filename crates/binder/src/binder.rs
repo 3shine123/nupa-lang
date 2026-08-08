@@ -34,8 +34,8 @@ pub struct Binder {
 impl Binder {
     pub fn new(symtab: SymbolTable) -> Self {
         let mut binder = Binder { symtab, current_class: None, has_error: false, err_msg: String::new(), ns_prefix: String::new() };
-        // Register built-in implicit root class __nupa_root
-        binder.symtab.declare(Symbol::new(SymbolKind::Class, "__nupa_root"));
+        // Register built-in implicit root class nupa_root
+        binder.symtab.declare(Symbol::new(SymbolKind::Class, "nupa_root"));
         binder
     }
 
@@ -165,6 +165,9 @@ impl Binder {
     fn bind_expr(&mut self, e: &mut CstExpr) {
         match &mut e.data {
             CstExprData::Ident(name) => {
+                if name.starts_with("__") {
+                    return;
+                }
                 if self.symtab.lookup(name).is_none() {
                     if let Some(ref cls_name) = self.current_class {
                         if let Some(cls_sym) = self.symtab.find_class(cls_name) {

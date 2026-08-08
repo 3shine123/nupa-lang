@@ -1,4 +1,5 @@
 #import <Foundation/NPString.nh>
+#import <Foundation/NPObject.np>
 #include <string.h>
 #include <ctype.h>
 #include <stdlib.h>

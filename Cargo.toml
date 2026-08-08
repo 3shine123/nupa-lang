@@ -16,5 +16,6 @@ members = [
     "crates/arc",
     "crates/codegen",
     "crates/preprocessor",
+    "crates/attrs",
     "crates/nupac",
 ]

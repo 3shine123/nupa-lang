@@ -52,7 +52,7 @@ pub enum AstExprKind {
     MsgSend, FuncCall,
     Unary, Binary, Assign, Cast,
     BlockLit, ArrayLit, DictLit,
-    Subscript, Comma, Sizeof, Ternary,
+    Subscript, Comma, Sizeof, Alignof, Ternary,
 }
 
 #[derive(Debug, Clone)]
@@ -100,6 +100,7 @@ pub enum AstExprData {
     Comma(Vec<AstExpr>),
     Subscript { object: Box<AstExpr>, key: Box<AstExpr> },
     Sizeof { type_expr: AstType, expr: Option<Box<AstExpr>> },
+    Alignof(AstType),
     Block { params: Vec<(AstType, String)>, return_type: Option<Box<AstType>>, body: Option<Box<AstStmt>> },
     Ternary { cond: Box<AstExpr>, then: Box<AstExpr>, else_: Box<AstExpr> },
     Selector(String),
@@ -180,6 +181,8 @@ pub struct AstDecl {
     pub line: usize,
     pub col: usize,
     pub data: AstDeclData,
+    /// Raw `__attribute__((...))` spellings carried from CST.
+    pub attributes: Vec<String>,
 }
 
 #[derive(Debug, Clone)]

@@ -173,6 +173,10 @@ impl Elaborator {
                 kind: AstExprKind::Sizeof, expr_type: None, line, col,
                 data: AstExprData::Sizeof { type_expr: self.convert_type(ty).unwrap_or_else(|| AstType::new(TypePrim::Void)), expr: None },
             },
+            CstExprData::Alignof(ty) => AstExpr {
+                kind: AstExprKind::Alignof, expr_type: None, line, col,
+                data: AstExprData::Alignof(self.convert_type(ty).unwrap_or_else(|| AstType::new(TypePrim::Void))),
+            },
             CstExprData::Paren(e) => self.convert_expr(e).unwrap_or_else(make_int_expr),
             CstExprData::NumberLit(e) => self.convert_expr(e).unwrap_or_else(make_int_expr),
             CstExprData::Message { receiver, selector, args } => {
@@ -565,7 +569,7 @@ impl Elaborator {
         let ad = match &cd.data {
             CstDeclData::Variable { var_type, initializer, is_static, is_extern, is_const, is_block_qual, is_weak, .. } => {
                 let effective_type = override_type.or_else(|| var_type.clone());
-                let mut base_ad = AstDecl { kind: AstDeclKind::Variable, line, col, name: cd.name.clone(), data: AstDeclData::Variable { var_type: effective_type.as_ref().and_then(|t| self.convert_type(t)).map(Box::new), init: initializer.as_ref().map(|i| Box::new(self.convert_expr(i).unwrap_or_else(make_int_expr))), is_static: *is_static, is_extern: *is_extern, is_const: *is_const, is_block_qual: *is_block_qual, is_weak: *is_weak, next: None } };
+                let mut base_ad = AstDecl { kind: AstDeclKind::Variable, line, col, name: cd.name.clone(), data: AstDeclData::Variable { var_type: effective_type.as_ref().and_then(|t| self.convert_type(t)).map(Box::new), init: initializer.as_ref().map(|i| Box::new(self.convert_expr(i).unwrap_or_else(make_int_expr))), is_static: *is_static, is_extern: *is_extern, is_const: *is_const, is_block_qual: *is_block_qual, is_weak: *is_weak, next: None }, attributes: cd.attributes.clone() };
                 // Build the next chain (comma-separated declarators) from cd.next
                 let base_type = effective_type.clone();
                 let mut chain_names: Vec<String> = Vec::new();
@@ -586,7 +590,7 @@ impl Elaborator {
                 for i in (0..chain_names.len()).rev() {
                     let next_type = base_type.clone();
                     let n_init = chain_inits[i].as_ref().map(|i| Box::new(self.convert_expr(i).unwrap_or_else(make_int_expr)));
-                    let ad = AstDecl { kind: AstDeclKind::Variable, line, col, name: Some(chain_names[i].clone()), data: AstDeclData::Variable { var_type: next_type.as_ref().and_then(|t| self.convert_type(t)).map(Box::new), init: n_init, is_static: *is_static, is_extern: *is_extern, is_const: *is_const, is_block_qual: *is_block_qual, is_weak: *is_weak, next: chain_head.take() } };
+                    let ad = AstDecl { kind: AstDeclKind::Variable, line, col, name: Some(chain_names[i].clone()), data: AstDeclData::Variable { var_type: next_type.as_ref().and_then(|t| self.convert_type(t)).map(Box::new), init: n_init, is_static: *is_static, is_extern: *is_extern, is_const: *is_const, is_block_qual: *is_block_qual, is_weak: *is_weak, next: chain_head.take() }, attributes: cd.attributes.clone() };
                     chain_head = Some(Box::new(ad));
                 }
                 if let AstDeclData::Variable { ref mut next, .. } = base_ad.data {
@@ -596,16 +600,16 @@ impl Elaborator {
             }
             CstDeclData::Function { return_type, params, body, .. } => {
                 let func_sym = cd.name.as_ref().and_then(|n| self.symtab.as_ref()?.lookup(n)).map(|s| s.name.clone());
-                AstDecl { kind: AstDeclKind::Function, line, col, name: cd.name.clone(), data: AstDeclData::Function { func_sym, return_type: return_type.as_ref().and_then(|t| self.convert_type(t)).map(Box::new), params: params.clone(), body: body.as_ref().and_then(|b| self.convert_stmt(b)).map(Box::new) } }
+                AstDecl { kind: AstDeclKind::Function, line, col, name: cd.name.clone(), data: AstDeclData::Function { func_sym, return_type: return_type.as_ref().and_then(|t| self.convert_type(t)).map(Box::new), params: params.clone(), body: body.as_ref().and_then(|b| self.convert_stmt(b)).map(Box::new) }, attributes: cd.attributes.clone() }
             }
             CstDeclData::Class { superclass, ivars, properties, methods, impl_vars, .. } => {
                 let fqn = self.ns_fqn(cd.name.as_deref().unwrap_or(""));
                 let cls_sym = self.symtab.as_ref().and_then(|st| st.find_class(&fqn)).map(|s| s.name.clone());
                 let cls_sym_clone = cls_sym.clone();
                 self.current_class_sym = cls_sym.clone();
-                // Inject implicit root class __nupa_root for classes without explicit superclass
+                // Inject implicit root class nupa_root for classes without explicit superclass
                 let effective_superclass = superclass.as_ref().map(|s| s.clone()).or_else(|| {
-                    if fqn != "__nupa_root" { Some("__nupa_root".to_string()) } else { None }
+                    if fqn != "nupa_root" { Some("nupa_root".to_string()) } else { None }
                 });
                 let sup_name = effective_superclass.as_ref().and_then(|s| {
                     self.symtab.as_ref().and_then(|st| {
@@ -625,7 +629,7 @@ impl Elaborator {
                         cur = np.next.as_ref().map(|n| n.as_ref());
                     }
                 }
-                let mut ad = AstDecl { kind: AstDeclKind::Class, line, col, name: Some(self.ns_fqn(cd.name.as_deref().unwrap_or(""))), data: AstDeclData::Class { cls_sym: cls_sym_clone, super_name: sup_name, methods: methods.iter().filter_map(|m| self.convert_decl(m)).collect(), ivars: ivars.iter().filter_map(|iv| self.convert_decl(iv)).collect(), properties: all_properties.iter().filter_map(|p| self.convert_decl(p)).collect(), impl_vars: impl_vars.iter().filter_map(|v| self.convert_decl(v)).collect(), is_implementation: cd.kind == CstDeclKind::ClassImplementation || cd.kind == CstDeclKind::CategoryImplementation } };
+                let mut ad = AstDecl { kind: AstDeclKind::Class, line, col, name: Some(self.ns_fqn(cd.name.as_deref().unwrap_or(""))), data: AstDeclData::Class { cls_sym: cls_sym_clone, super_name: sup_name, methods: methods.iter().filter_map(|m| self.convert_decl(m)).collect(), ivars: ivars.iter().filter_map(|iv| self.convert_decl(iv)).collect(), properties: all_properties.iter().filter_map(|p| self.convert_decl(p)).collect(), impl_vars: impl_vars.iter().filter_map(|v| self.convert_decl(v)).collect(), is_implementation: cd.kind == CstDeclKind::ClassImplementation || cd.kind == CstDeclKind::CategoryImplementation }, attributes: cd.attributes.clone() };
                 if let AstDeclData::Class { ref mut methods, .. } = ad.data {
                     if let Some(ref st) = self.symtab {
                         if let Some(ref cls_name) = cls_sym {
@@ -663,15 +667,15 @@ impl Elaborator {
                         p = param.next.as_mut().map(|n| &mut **n);
                     }
                 }
-                AstDecl { kind: AstDeclKind::Method, line, col, name: cd.name.clone(), data: AstDeclData::Method { method_sym: None, is_class_method: *is_class_method, return_type: return_type.as_ref().and_then(|t| self.convert_type(t)).map(Box::new), params: resolved_params, body: body.as_ref().and_then(|b| self.convert_stmt(b)).map(Box::new) } }
+                AstDecl { kind: AstDeclKind::Method, line, col, name: cd.name.clone(), data: AstDeclData::Method { method_sym: None, is_class_method: *is_class_method, return_type: return_type.as_ref().and_then(|t| self.convert_type(t)).map(Box::new), params: resolved_params, body: body.as_ref().and_then(|b| self.convert_stmt(b)).map(Box::new) }, attributes: cd.attributes.clone() }
             }
             CstDeclData::Ivar { ivar_type, is_weak, .. } => {
                 let ivar_sym = cd.name.as_ref().and_then(|n| self.symtab.as_ref()?.lookup(n)).map(|s| s.name.clone());
-                AstDecl { kind: AstDeclKind::Ivar, line, col, name: cd.name.clone(), data: AstDeclData::Ivar { ivar_sym, ivar_type: ivar_type.as_ref().and_then(|t| self.convert_type(t)).map(Box::new), is_weak: *is_weak } }
+                AstDecl { kind: AstDeclKind::Ivar, line, col, name: cd.name.clone(), data: AstDeclData::Ivar { ivar_sym, ivar_type: ivar_type.as_ref().and_then(|t| self.convert_type(t)).map(Box::new), is_weak: *is_weak }, attributes: cd.attributes.clone() }
             }
             CstDeclData::Property { prop_type, getter, setter, is_readonly, is_weak, is_assign, is_retain, is_copy, is_nonatomic, is_dynamic, .. } => {
                 let prop_sym = cd.name.as_ref().and_then(|n| self.symtab.as_ref()?.lookup(n)).map(|s| s.name.clone());
-                AstDecl { kind: AstDeclKind::Property, line, col, name: cd.name.clone(), data: AstDeclData::Property { prop_sym, prop_type: prop_type.as_ref().and_then(|t| self.convert_type(t)).map(Box::new), getter: getter.clone(), setter: setter.clone(), is_readonly: *is_readonly, is_weak: *is_weak, is_assign: *is_assign, is_retain: *is_retain, is_copy: *is_copy, is_nonatomic: *is_nonatomic, is_dynamic: *is_dynamic } }
+                AstDecl { kind: AstDeclKind::Property, line, col, name: cd.name.clone(), data: AstDeclData::Property { prop_sym, prop_type: prop_type.as_ref().and_then(|t| self.convert_type(t)).map(Box::new), getter: getter.clone(), setter: setter.clone(), is_readonly: *is_readonly, is_weak: *is_weak, is_assign: *is_assign, is_retain: *is_retain, is_copy: *is_copy, is_nonatomic: *is_nonatomic, is_dynamic: *is_dynamic }, attributes: cd.attributes.clone() }
             }
             CstDeclData::Typedef { alias_type, struct_fields } => {
                 // Store the fully-qualified name so codegen emits the flat name,
@@ -690,20 +694,20 @@ impl Elaborator {
                         st.declare(Symbol::new(SymbolKind::Type, &ty_fqn));
                     }
                 }
-                AstDecl { kind: AstDeclKind::Typedef, line, col, name: Some(ty_fqn.clone()).filter(|s| !s.is_empty()).or_else(|| cd.name.clone()), data: AstDeclData::Typedef { aliased_type: alias_type.as_ref().and_then(|t| self.convert_type(t)).map(Box::new), struct_fields: struct_fields.iter().filter_map(|f| self.convert_decl(f)).collect() } }
+                AstDecl { kind: AstDeclKind::Typedef, line, col, name: Some(ty_fqn.clone()).filter(|s| !s.is_empty()).or_else(|| cd.name.clone()), data: AstDeclData::Typedef { aliased_type: alias_type.as_ref().and_then(|t| self.convert_type(t)).map(Box::new), struct_fields: struct_fields.iter().filter_map(|f| self.convert_decl(f)).collect() }, attributes: cd.attributes.clone() }
             }
             CstDeclData::Aggregate { fields, .. } => {
-                AstDecl { kind: AstDeclKind::Struct, line, col, name: cd.name.clone(), data: AstDeclData::Aggregate { fields: fields.iter().filter_map(|f| self.convert_decl(f)).collect() } }
+                AstDecl { kind: AstDeclKind::Struct, line, col, name: cd.name.clone(), data: AstDeclData::Aggregate { fields: fields.iter().filter_map(|f| self.convert_decl(f)).collect() }, attributes: cd.attributes.clone() }
             }
             CstDeclData::Enum { members, values } => {
-                AstDecl { kind: AstDeclKind::Enum, line, col, name: cd.name.clone(), data: AstDeclData::Enum { members: members.clone(), values: values.iter().filter_map(|v| self.convert_expr(v)).collect() } }
+                AstDecl { kind: AstDeclKind::Enum, line, col, name: cd.name.clone(), data: AstDeclData::Enum { members: members.clone(), values: values.iter().filter_map(|v| self.convert_expr(v)).collect() }, attributes: cd.attributes.clone() }
             }
             CstDeclData::Namespace(decls) => {
                 let mut ast_decls = Vec::new();
                 for d in decls { self.flatten_decls(d, &mut ast_decls); }
                 if ast_decls.len() == 1 { return Some(ast_decls.into_iter().next().unwrap()); }
                 else if ast_decls.is_empty() { return None; }
-                AstDecl { kind: AstDeclKind::Namespace, line, col, name: None, data: AstDeclData::Namespace(ast_decls) }
+                AstDecl { kind: AstDeclKind::Namespace, line, col, name: None, data: AstDeclData::Namespace(ast_decls), attributes: cd.attributes.clone() }
             }
             CstDeclData::Asm { is_volatile, is_goto, template, outputs, inputs, clobbers, labels } => {
                 let mut conv = |ops: &Vec<CstAsmOperand>| -> Vec<AstAsmOperand> {
@@ -713,7 +717,7 @@ impl Elaborator {
                         expr: self.convert_expr(&op.expr).unwrap_or_else(make_int_expr),
                     }).collect()
                 };
-                AstDecl { kind: AstDeclKind::Asm, line, col, name: cd.name.clone(), data: AstDeclData::Asm { is_volatile: *is_volatile, is_goto: *is_goto, template: template.clone(), outputs: conv(outputs), inputs: conv(inputs), clobbers: clobbers.clone(), labels: labels.clone() } }
+                AstDecl { kind: AstDeclKind::Asm, line, col, name: cd.name.clone(), data: AstDeclData::Asm { is_volatile: *is_volatile, is_goto: *is_goto, template: template.clone(), outputs: conv(outputs), inputs: conv(inputs), clobbers: clobbers.clone(), labels: labels.clone() }, attributes: cd.attributes.clone() }
             }
             CstDeclData::Forward(_) => return None,
             CstDeclData::ProtocolData { .. } => return None,

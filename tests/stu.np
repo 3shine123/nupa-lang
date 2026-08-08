@@ -178,13 +178,8 @@ int main(int argc, const char* argv[])
 
         // 6. 内存清理测试
         printf("\n>>> 正在释放内存... <<<\n");
-        [collector release]; 
-        
-        // 外部创建的对象也进行释放
-        [s1 release];
-        [s2 release];
-        [s3 release];
-        [s4 release];
+        // 容器 dealloc 会释放内部持有的学生，无需手动释放
+        [collector release];
 
         printf(">>> 测试顺利结束！ <<<\n");
     }

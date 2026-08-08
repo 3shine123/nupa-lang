@@ -115,11 +115,15 @@ cd nupa-x86_64-unknown-linux-musl
 ```bash
 # 只输出 C 代码（自动推导 .np → .c）
 nupac -rewrite-nupa hello.np
-nupac hello.np --rewrite-nupa              # flag 放哪都行
-nupac --rewrite-nupa hello.np -o out.c     # 也可以显式指定路径
+nupac hello.np -rewrite-nupa               # flag 放哪都行
+nupac -rewrite-nupa hello.np -o out.c      # 也可以显式指定路径
+# （双横线 --rewrite-nupa 形式同样接受）
 
-# 单独用 Clang 编译转译后 C 代码
-clang -I include -o hello hello.c -Lbuilddir -lnupa
+# 单独用 Clang 编译转译后 C 代码（两种方式）：
+#   1) 直接编译运行时源码
+clang -I include -o hello hello.c include/nupa/runtime.c
+#   2) 链接编译好的 libnupa.a（位于 nupac 二进制同目录）
+clang -I include -o hello hello.c -Ltarget/release -lnupa
 
 # 直接输出对象文件
 nupac hello.np -o hello.o                  # -c 模式，不链接
@@ -147,9 +151,9 @@ nupac hello.np              → Error: specify -o or -rewrite-nupa
 `nupac` 自带用 [clap_complete](https://crates.io/crates/clap_complete) 生成的 **zsh / bash / fish** 补全脚本。随时可用以下命令重新生成：
 
 ```bash
-nupac --gen-completions zsh > _nupac
-nupac --gen-completions bash > nupac.bash
-nupac --gen-completions fish > nupac.fish
+nupac -gen-completions zsh > _nupac
+nupac -gen-completions bash > nupac.bash
+nupac -gen-completions fish > nupac.fish
 ```
 
 `install.sh` 也会把脚本装进安装包（`share/nupac/completions/`）。
@@ -292,13 +296,46 @@ SEL sel = @selector(doSomething:);
 @end
 ```
 
+### C 属性（__attribute__）
+
+Nupa 支持 `__attribute__((...))` 透传。你可以在全局声明和 struct 字段上直接写 C 的 `__attribute__`，编译器会把它们原样保留到生成的 C 代码中。
+
+```nupa
+__attribute__((packed))
+struct Point {
+    int x;
+    int y;
+};
+
+__attribute__((format(printf, 1, 2)))
+int my_log(const char *fmt, ...);
+```
+
+编译器内置了一个 **590 个属性的三分类表**（来源：Clang 和 GCC 官方文档）。`-backend` 选项控制允许使用哪些属性：
+
+| 选项 | 行为 |
+|---|---|
+| `-backend=portable`（默认） | 只允许 gcc 和 clang 都支持的属性，其余报错 |
+| `-backend=clang` | 允许 clang 专属属性（如 `availability`、`diagnose_if`、`objc_direct`） |
+| `-backend=gcc` | 允许 gcc 专属属性（如 `strub`、`optimize`、`stack_protect`） |
+
+不在表中的未知属性只产生 warning 并透传，绝不会报错。
+
 ### 新特性
 
 Nupa 在 Objective-C 语法基础上，加入了一些 ObjC 本身没有的语言特性。
 
-#### 隐式根类（__nupa_root）
+**近期亮点：**
 
-Nupa 现在支持用户自定义根类。你不再需要强制继承 `NPObject`——不写父类的 `@interface` 会自动获得编译器注入的隐式根类 `__nupa_root`，同时保持 `id` 类型的统一性和静态派发能力。
+- **原生裸机支持（`-fno-libc`）** — 编译为自包含 C，无 libc、无 Foundation、无 TLS；`@try/@catch` 用 `__builtin_setjmp/longjmp`，零样板的 `runtime_baremetal.c` 提供 bump allocator、`NUPA_CLASS_$_nupa_root`、异常状态和 `memcpy`。
+- **C 超集** — `@protocol` + 一致性检查、`@property` + `@synthesize`、`instancetype`、`@public` ivar、点语法、struct + 函数指针、内联汇编、C 风格类型转换。
+- **类型化 `@catch`** — 每个 catch 块现在检查 `isa == &NUPA_CLASS_$_Class`，只有匹配的类才进入该处理器；多个 catch 正确隔离。
+- **ARC 修复** — 作用域栈模型不再在嵌套作用域结束时释放父作用域变量；`for` 初始化对象提升修复了泄漏和非法 `for` 头。
+- **`__attribute__` 透传 + `-backend`** — 完整支持 C 的 `__attribute__((...))` 和所有 `__` 前缀的 C 预定义标识符（`__FILE__`、`__LINE__`、`__builtin_*`、`__extension__`、`__typeof__`、`__alignof__` 等）；`-backend` 选项控制哪些编译器专属属性允许使用。
+
+#### 隐式根类（nupa_root）
+
+Nupa 现在支持用户自定义根类。你不再需要强制继承 `NPObject`——不写父类的 `@interface` 会自动获得编译器注入的隐式根类 `nupa_root`，同时保持 `id` 类型的统一性和静态派发能力。
 
 **之前：**
 
@@ -317,7 +354,7 @@ Nupa 现在支持用户自定义根类。你不再需要强制继承 `NPObject`�
 
 #### 核心机制
 
-当用户不写父类时，编译器自动注入 `__nupa_root`：
+当用户不写父类时，编译器自动注入 `nupa_root`：
 
 ```nupa
 // 用户代码：
@@ -328,7 +365,7 @@ Nupa 现在支持用户自定义根类。你不再需要强制继承 `NPObject`�
 @end
 
 // 编译器视为：
-@interface Animal : __nupa_root {
+@interface Animal : nupa_root {
     int age;
 }
 - (void)speak;
@@ -343,13 +380,13 @@ struct nupa_object_header {
     struct nupa_vtable *vtable;
 };
 
-struct __nupa_root {
+struct nupa_root {
     struct nupa_object_header header;
 };
 
 // Animal 的 struct
 struct Animal {
-    struct __nupa_root __super;  // 包含 header
+    struct nupa_root __super;  // 包含 header
     int age;
 };
 ```
@@ -357,22 +394,22 @@ struct Animal {
 #### id 的新定义
 
 ```c
-typedef struct __nupa_root *nupa_id_t;
+typedef struct nupa_root *nupa_id_t;
 ```
 
-`id` 不再绑定任何具体类，只要求对象以 `__nupa_root` 开头：
+`id` 不再绑定任何具体类，只要求对象以 `nupa_root` 开头：
 
 ```nupa
 Animal *a = [[Animal alloc] init];
-id obj = a;                    // ✅ 合法，Animal 继承自 __nupa_root
+id obj = a;                    // ✅ 合法，Animal 继承自 nupa_root
 [obj speak];                   // 静态派发：obj->header.vtable[...]
 ```
 
-#### NPObject vs __nupa_root
+#### NPObject vs nupa_root
 
 | 写法                          | 含义                       | 适用场景            |
 | --------------------------- | ------------------------ | --------------- |
-| `@interface Xxx`            | 隐式继承 `__nupa_root`，最轻量   | 自定义内存布局、内核、嵌入式  |
+| `@interface Xxx`            | 隐式继承 `nupa_root`，最轻量   | 自定义内存布局、内核、嵌入式  |
 | `@interface Xxx : NPObject` | 显式继承，获得 retain/release 等 | 用户态应用、需要完整运行时支持 |
 
 ```nupa
@@ -404,7 +441,7 @@ nupac -rewrite-nupa -fno-libc kernel.np   # 生成自包含 C
 - `@try/@catch/@finally` 用 `__builtin_setjmp/longjmp`（零 libc），异常状态用普通全局而非 `__thread`
 - 类型（`SEL`/`NPClass`/`NPObject`/`id`）自含
 
-用户只需提供：`nupa___nupa_root_class`、异常全局（如用 `@try`）、`memcpy`（如用 `@try`）、freestanding 头（`stdint.h`/`stddef.h`/`stdbool.h`）。
+用户只需提供：`nupa_nupa_root_class`、异常全局（如用 `@try`）、`memcpy`（如用 `@try`）、freestanding 头（`stdint.h`/`stddef.h`/`stdbool.h`）。
 
 **裸机分配器 + `[[Class alloc] init]`**（`include/nupa/runtime_baremetal.c`）：
 
@@ -470,7 +507,7 @@ obj->header.vtable[INDEX_doSomething](obj, arg);
    已实现：
 
 - [x] 隐式根类注入（语义分析阶段）
-- [x] `__nupa_root` 和 `nupa_object_header` 的 C 代码生成
+- [x] `nupa_root` 和 `nupa_object_header` 的 C 代码生成
 - [x] `id` → `nupa_id_t` 的类型映射
 - [x] 统一 VTable 索引分配
 - [x] 根类/子类 struct 生成
@@ -510,11 +547,11 @@ obj->header.vtable[INDEX_doSomething](obj, arg);
 
 | Nupa 符号                   | 转译后的 C 符号                    |
 | ------------------------- | ---------------------------- |
-| `Game::Player`            | `nupa_Game__Player`          |
-| `Game::Entities::Enemy`   | `nupa_Game__Entities__Enemy` |
+| `Game::Player`            | `Game__Player`          |
+| `Game::Entities::Enemy`   | `Game__Entities__Enemy` |
 | 方法 `-[Game::Player init]` | `Game__Player_init`          |
-| VTable                    | `nupa_Game__Player_vtable`   |
-| 类元数据                      | `nupa_Game__Player_class`    |
+| VTable                    | `NUPA_VTABLE_$_Game__Player`   |
+| 类元数据                      | `NUPA_CLASS_$_Game__Player`    |
 
 **特性**：
 
@@ -574,13 +611,18 @@ nupac [options] <input.np>
 
 选项:
   -o <file>         指定输出文件（.o 输出对象文件，否则输出可执行文件）
-  -H <header.h>     从 .nh 生成头文件
   -I <dir>          添加头文件搜索路径
   -L <dir>          添加库搜索路径
   -v, --verbose     显示详细输出（包括 Clang 编译警告）
   --version         显示版本号
   --rewrite-nupa    只输出 C 代码（不编译）
   -fno-nupa-arc     禁用 ARC（手动 MRC 模式）
+  -fno-checker      跳过类型检查
+  -fno-libc         裸机/freestanding 输出（无 libc、无 TLS）
+  -backend <mode>   C 编译器后端：portable（默认）、clang、gcc
+  -arch <target>    构建目标架构（如 -arch x86_64）
+  -asm <file.s>     链接汇编文件（可重复）
+  -gen-completions <shell>  生成 shell 补全脚本（zsh|bash|fish）
 ```
 
 ### 构建系统集成

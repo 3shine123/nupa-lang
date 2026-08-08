@@ -1,9 +1,12 @@
+#ifndef NPOBJECT_NH
+#define NPOBJECT_NH
+
 #include <stdint.h>
 #include <stddef.h>
 
 struct NPClass;
 
-@interface __nupa_root
+@interface nupa_root
 - (id)init;
 - (void)dealloc;
 - (void)release;
@@ -11,7 +14,7 @@ struct NPClass;
 - (BOOL)isKindOf:(Class)cls;
 @end
 
-@interface NPObject
+@interface NPObject : nupa_root
 + (id)alloc;
 + (id)new;
 - (id)init;
@@ -20,47 +23,4 @@ struct NPClass;
 - (id)retain;
 @end
 
-id nupa_alloc(struct NPClass *cls);
-id nupa_init(id self);
-void nupa_release(id obj);
-id nupa_retain(id obj);
-
-@implementation __nupa_root
-- (id)init {
-    return nupa_init(self);
-}
-- (void)dealloc {
-    return;
-}
-- (void)release {
-    nupa_release(self);
-}
-- (id)retain {
-    return nupa_retain(self);
-}
-- (BOOL)isKindOf:(Class)cls {
-    return nupa_isKindOf(self, cls);
-}
-@end
-
-@implementation NPObject
-+ (id)alloc {
-    return nupa_alloc(self);
-}
-+ (id)new {
-    id obj = nupa_alloc(self);
-    return nupa_init(obj);
-}
-- (id)init {
-    return nupa_init(self);
-}
-- (void)dealloc {
-    return;
-}
-- (void)release {
-    nupa_release(self);
-}
-- (id)retain {
-    return nupa_retain(self);
-}
-@end
+#endif

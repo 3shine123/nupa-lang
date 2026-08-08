@@ -15,6 +15,9 @@ for a in "$@"; do
                 x86_64-pc-windows-gnu)      ZIG_TARGET="x86_64-windows-gnu" ;;
                 aarch64-apple-darwin)       ZIG_TARGET="aarch64-macos" ;;
                 x86_64-apple-darwin)        ZIG_TARGET="x86_64-macos" ;;
+                x86_64-unknown-freebsd)     ZIG_TARGET="x86_64-freebsd-none" ;;
+                i686-unknown-freebsd)       ZIG_TARGET="x86-freebsd-none" ;;
+                x86_64-unknown-netbsd)      ZIG_TARGET="x86_64-netbsd-none" ;;
                 *) ZIG_TARGET="$t" ;;
             esac
             ;;

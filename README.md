@@ -116,11 +116,15 @@ cd nupa-x86_64-unknown-linux-musl
 ```bash
 # Just output C code (auto-derives .np → .c)
 nupac -rewrite-nupa hello.np
-nupac hello.np --rewrite-nupa              # flag works anywhere
-nupac --rewrite-nupa hello.np -o out.c     # explicit path also works
+nupac hello.np -rewrite-nupa               # flag works anywhere
+nupac -rewrite-nupa hello.np -o out.c      # explicit path also works
+# (--rewrite-nupa double-dash form also accepted)
 
-# Compile and translate the C code alone using Clang
+# Compile the transpiled C alone with Clang — two ways:
+#   1) compile the runtime source directly
 clang -I include -o hello hello.c include/nupa/runtime.c
+#   2) link the prebuilt libnupa.a (lives next to the nupac binary)
+clang -I include -o hello hello.c -Ltarget/release -lnupa
 
 # Output object file directly
 nupac hello.np -o hello.o                  # -c mode, no linking
@@ -137,10 +141,10 @@ nupac run hello.np                          # auto-clean temp binary
 nupac -v run hello.np
 
 # [!] Error: .c output without -rewrite-nupa
-nupac hello.np -o hello.c   → Error: use --rewrite-nupa to output C code
+nupac hello.np -o hello.c   → Error: use -rewrite-nupa to output C code
 
 # [!] Error: no output method specified
-nupac hello.np              → Error: specify -o or --rewrite-nupa
+nupac hello.np              → Error: specify -o or -rewrite-nupa
 ```
 
 ### Shell Completion (Tab autocomplete)
@@ -149,9 +153,9 @@ nupac hello.np              → Error: specify -o or --rewrite-nupa
 [clap_complete](https://crates.io/crates/clap_complete). Regenerate them any time with:
 
 ```bash
-nupac --gen-completions zsh > _nupac
-nupac --gen-completions bash > nupac.bash
-nupac --gen-completions fish > nupac.fish
+nupac -gen-completions zsh > _nupac
+nupac -gen-completions bash > nupac.bash
+nupac -gen-completions fish > nupac.fish
 ```
 
 The scripts are also copied into the install bundle (`share/nupac/completions/`) by `install.sh`.
@@ -292,6 +296,31 @@ SEL sel = @selector(doSomething:);
 @end
 ```
 
+### C Attributes (__attribute__)
+
+Nupa supports `__attribute__((...))` pass-through. You can write C `__attribute__` on global declarations and struct fields, and the compiler preserves them verbatim in the generated C output.
+
+```nupa
+__attribute__((packed))
+struct Point {
+    int x;
+    int y;
+};
+
+__attribute__((format(printf, 1, 2)))
+int my_log(const char *fmt, ...);
+```
+
+The compiler ships with a **590-attribute classification table** (scraped from Clang and GCC official docs). The `-backend` option controls which attributes are allowed:
+
+| Option | Behavior |
+|---|---|
+| `-backend=portable` (default) | Only attributes supported by both gcc and clang; others error |
+| `-backend=clang` | Allow clang-specific attributes (e.g. `availability`, `diagnose_if`, `objc_direct`) |
+| `-backend=gcc` | Allow gcc-specific attributes (e.g. `strub`, `optimize`, `stack_protect`) |
+
+Unknown attributes (not in the table) produce a warning and pass through — never a hard error.
+
 ### Memory Management
 
 Nupa uses **compile-time static ARC**. The compiler determines each object reference's lifetime through CFG dataflow analysis and inserts retain/release calls automatically. No manual `retain`/`release`/`autorelease` needed.
@@ -312,14 +341,15 @@ Nupa adds features on top of Objective-C syntax that ObjC itself doesn't have.
 
 **Recent highlights:**
 
-- **Native bare-metal support (`-fno-libc`)** — compiles to self-contained C with no libc, no Foundation, no TLS; `@try/@catch` uses `__builtin_setjmp/longjmp`, and a zero-boilerplate `runtime_baremetal.c` provides the bump allocator, `nupa___nupa_root_class`, exception state, and `memcpy`.
+- **Native bare-metal support (`-fno-libc`)** — compiles to self-contained C with no libc, no Foundation, no TLS; `@try/@catch` uses `__builtin_setjmp/longjmp`, and a zero-boilerplate `runtime_baremetal.c` provides the bump allocator, `NUPA_CLASS_$_nupa_root`, exception state, and `memcpy`.
 - **C superset** — `@protocol` + conformance, `@property` + `@synthesize`, `instancetype`, `@public` ivars, dot syntax, structs + function pointers, inline asm, C-style casts.
-- **Typed `@catch`** — each catch block now checks `isa == &nupa_Class_class`, so only the matching class enters the handler; multiple catches are properly isolated.
+- **Typed `@catch`** — each catch block now checks `isa == &NUPA_CLASS_$_Class`, so only the matching class enters the handler; multiple catches are properly isolated.
 - **ARC fixes** — scope-stack model no longer releases parent-scope variables at nested scope end; `for`-init object hoisting stops leaks and invalid `for` headers.
+- **`__attribute__` pass-through + `-backend`** — full support for C `__attribute__((...))` and all `__`-prefixed C predefined identifiers (`__FILE__`, `__LINE__`, `__builtin_*`, `__extension__`, `__typeof__`, `__alignof__`, ...); the `-backend` flag controls which compiler-specific attributes are allowed.
 
-### Implicit Root Class (`__nupa_root`)
+### Implicit Root Class (`nupa_root`)
 
-Nupa now supports user-defined root classes. You no longer need to inherit from `NPObject` — an `@interface` without a superclass automatically gets a compiler-injected implicit root class `__nupa_root`, while keeping `id` type uniformity and static dispatch.
+Nupa now supports user-defined root classes. You no longer need to inherit from `NPObject` — an `@interface` without a superclass automatically gets a compiler-injected implicit root class `nupa_root`, while keeping `id` type uniformity and static dispatch.
 
 **Before:**
 
@@ -338,7 +368,7 @@ Both are valid, and `id` can point to any Nupa object.
 
 #### How It Works
 
-When no superclass is specified, the compiler injects `__nupa_root`:
+When no superclass is specified, the compiler injects `nupa_root`:
 
 ```nupa
 // User code:
@@ -349,7 +379,7 @@ When no superclass is specified, the compiler injects `__nupa_root`:
 @end
 
 // Compiler treats as:
-@interface Animal : __nupa_root {
+@interface Animal : nupa_root {
     int age;
 }
 - (void)speak;
@@ -364,13 +394,13 @@ struct nupa_object_header {
     struct nupa_vtable *vtable;
 };
 
-struct __nupa_root {
+struct nupa_root {
     struct nupa_object_header header;
 };
 
 // Animal's struct
 struct Animal {
-    struct __nupa_root __super;  // contains header
+    struct nupa_root __super;  // contains header
     int age;
 };
 ```
@@ -378,14 +408,14 @@ struct Animal {
 #### `id` Type
 
 ```c
-typedef struct __nupa_root *nupa_id_t;
+typedef struct nupa_root *nupa_id_t;
 ```
 
-`id` is no longer tied to `NPObject` — it only requires the object to start with `__nupa_root`. This means:
+`id` is no longer tied to `NPObject` — it only requires the object to start with `nupa_root`. This means:
 
 ```nupa
 Animal *a = [[Animal alloc] init];
-id obj = a;                    // valid: Animal inherits from __nupa_root
+id obj = a;                    // valid: Animal inherits from nupa_root
 [obj speak];                   // static dispatch: obj->header.vtable[...]
 ```
 
@@ -402,16 +432,16 @@ Generated C:
 
 ```c
 struct Dog {
-    struct Animal __super;     // contains __nupa_root → header
+    struct Animal __super;     // contains nupa_root → header
     struct NSString *breed;
 };
 ```
 
-#### `NPObject` vs `__nupa_root`
+#### `NPObject` vs `nupa_root`
 
 | Declaration                 | Means                               | Use Case                        |
 | --------------------------- | ----------------------------------- | ------------------------------- |
-| `@interface Xxx`            | Implicit `__nupa_root`, lightweight | Custom layout, kernel, embedded |
+| `@interface Xxx`            | Implicit `nupa_root`, lightweight    | Custom layout, kernel, embedded |
 | `@interface Xxx : NPObject` | Explicit NPObject, full runtime     | User apps, ARC, retain/release  |
 
 ```nupa
@@ -443,7 +473,7 @@ In `-fno-libc` mode the transpiled C:
 - implements `@try/@catch/@finally` with `__builtin_setjmp/longjmp` (zero libc), with plain (non-`__thread`) exception globals
 - is self-contained for `SEL`/`NPClass`/`NPObject`/`id`
 
-The user only provides: `nupa___nupa_root_class`, the exception globals (if using `@try`), `memcpy` (if using `@try`), and freestanding headers (`stdint.h`/`stddef.h`/`stdbool.h`).
+The user only provides: `NUPA_CLASS_$_nupa_root`, the exception globals (if using `@try`), `memcpy` (if using `@try`), and freestanding headers (`stdint.h`/`stddef.h`/`stdbool.h`).
 
 **Bare-metal allocator + `[[Class alloc] init]`** (`include/nupa/runtime_baremetal.c`):
 
@@ -518,7 +548,7 @@ Reference counting is managed by compile-time static ARC analysis, not stored in
    Implemented:
 
 - [x] Implicit root class injection (semantic analysis)
-- [x] `__nupa_root` and `nupa_object_header` C code generation
+- [x] `nupa_root` and `nupa_object_header` C code generation
 - [x] `id` → `nupa_id_t` type mapping
 - [x] Unified VTable index allocation
 - [x] Root/subclass struct generation
@@ -558,11 +588,11 @@ Reference counting is managed by compile-time static ARC analysis, not stored in
 
 | Nupa Symbol                   | Transpiled C Symbol          |
 | ----------------------------- | ---------------------------- |
-| `Game::Player`                | `nupa_Game__Player`          |
-| `Game::Entities::Enemy`       | `nupa_Game__Entities__Enemy` |
+| `Game::Player`                | `Game__Player`               |
+| `Game::Entities::Enemy`       | `Game__Entities__Enemy`      |
 | Method `-[Game::Player init]` | `Game__Player_init`          |
-| VTable                        | `nupa_Game__Player_vtable`   |
-| Class metadata                | `nupa_Game__Player_class`    |
+| VTable                        | `NUPA_VTABLE_$_Game__Player` |
+| Class metadata                | `NUPA_CLASS_$_Game__Player`  |
 
 **Features**:
 
@@ -622,13 +652,18 @@ Modes:
 
 Options:
   -o <file>         Output file (.o produces object file, otherwise executable)
-  -H <header.h>     Generate header from .nh
   -I <dir>          Add include search path
   -L <dir>          Add library search path
   -v, --verbose     Show verbose output (including Clang warnings)
-  --version         Show version number
-  --rewrite-nupa    Output C code only (no compilation)
+  -V, --version     Show version number
+  -rewrite-nupa     Output C code only (no compilation)
   -fno-nupa-arc     Disable ARC (manual MRC mode)
+  -fno-checker      Skip type checking
+  -fno-libc         Bare-metal/freestanding output (no libc, no TLS)
+  -backend <mode>   C compiler backend: portable (default), clang, or gcc
+  -arch <target>    Build for target architecture (e.g. -arch x86_64)
+  -asm <file.s>     Link a real assembly file (repeatable)
+  -gen-completions <shell>  Generate shell completion script (zsh|bash|fish)
 ```
 
 ### Build System Integration

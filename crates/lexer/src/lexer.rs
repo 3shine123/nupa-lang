@@ -107,6 +107,19 @@ const KW_TABLE: &[(&str, KeywordKind)] = &[
     ("__asm__", KeywordKind::Asm),
     ("__volatile", KeywordKind::Volatile),
     ("__volatile__", KeywordKind::Volatile),
+    ("__typeof", KeywordKind::Typeof),
+    ("__typeof__", KeywordKind::Typeof),
+    ("__const", KeywordKind::Const),
+    ("__const__", KeywordKind::Const),
+    ("__inline", KeywordKind::Inline),
+    ("__inline__", KeywordKind::Inline),
+    ("__signed", KeywordKind::Signed),
+    ("__signed__", KeywordKind::Signed),
+    ("__restrict", KeywordKind::Restrict),
+    ("__restrict__", KeywordKind::Restrict),
+    ("__extension__", KeywordKind::Extension),
+    ("__alignof", KeywordKind::Alignof),
+    ("__alignof__", KeywordKind::Alignof),
 ];
 
 fn lookup_keyword(s: &str) -> KeywordKind {

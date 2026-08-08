@@ -16,7 +16,7 @@
 
 // ─── Runtime globals (referenced by transpiled code) ─────────────────────────
 
-NPClass nupa___nupa_root_class;
+NPClass NUPA_CLASS_$_nupa_root;
 
 #ifdef __NUPA_FREESTANDING
 jmp_buf __nupa_exception_buf;
@@ -28,7 +28,8 @@ __thread id      __nupa_exception_value;
 
 // ─── memcpy (used by @try/@catch jmp_buf save/restore) ──────────────────────
 
-void *memcpy(void *dst, const void *src, size_t n) {
+#undef memcpy
+__attribute__((weak)) void *memcpy(void *dst, const void *src, size_t n) {
     unsigned char *d = dst;
     const unsigned char *s = src;
     while (n--) *d++ = *s++;
@@ -55,6 +56,39 @@ void *nupa_malloc(size_t size) {
 
 void nupa_free(void *ptr) {
     (void)ptr; /* bump allocator: never reuses memory */
+}
+
+// ─── Autorelease pool ────────────────────────────────────────────────────────
+// Bare-metal: single-core, no __thread.
+
+struct nupa_autoreleasepool {
+    struct nupa_autoreleasepool *next;
+    NPObject **objects;
+    int count;
+    int capacity;
+};
+
+static nupa_autoreleasepool_t *current_pool = NULL;
+
+nupa_autoreleasepool_t *nupa_autoreleasepoolPush(void) {
+    nupa_autoreleasepool_t *pool = nupa_malloc(sizeof(nupa_autoreleasepool_t));
+    if (!pool) return NULL;
+    pool->next = current_pool;
+    pool->objects = NULL;
+    pool->count = 0;
+    pool->capacity = 0;
+    current_pool = pool;
+    return pool;
+}
+
+void nupa_autoreleasepoolPop(nupa_autoreleasepool_t *pool) {
+    if (!pool) return;
+    for (int i = 0; i < pool->count; i++) {
+        nupa_release(pool->objects[i]);
+    }
+    nupa_free(pool->objects);
+    current_pool = pool->next;
+    nupa_free(pool);
 }
 
 // ─── Lifecycle ───────────────────────────────────────────────────────────────
@@ -85,10 +119,30 @@ void nupa_release(NPObject *obj) {
     if (obj->retain_count > 0)
         obj->retain_count--;
     if (obj->retain_count == 0) {
+        // Call dealloc so ivar cleanup runs (e.g. NPString frees _cstr).
+        // dealloc's own `[super dealloc]` calls the parent's dealloc directly
+        // (not nupa_release), so no double-free.
+        if (obj->isa && obj->isa->dealloc) {
+            obj->isa->dealloc(obj, (SEL){ .name = "dealloc", .hash = 0xD9929EB3 });
+        }
         nupa_free(obj);
     }
 }
 
 NPObject *nupa_autorelease(NPObject *obj) {
-    return obj; /* no autorelease pool in bare-metal */
+    if (!obj) return obj;
+    nupa_autoreleasepool_t *pool = current_pool;
+    if (!pool) return obj;
+    if (pool->count >= pool->capacity) {
+        int new_cap = pool->capacity ? pool->capacity * 2 : 16;
+        NPObject **new_objs = nupa_malloc(new_cap * sizeof(NPObject *));
+        if (!new_objs) return obj;
+        if (pool->objects) {
+            for (int i = 0; i < pool->count; i++) new_objs[i] = pool->objects[i];
+        }
+        pool->objects = new_objs;
+        pool->capacity = new_cap;
+    }
+    pool->objects[pool->count++] = obj;
+    return obj;
 }

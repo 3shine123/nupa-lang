@@ -112,7 +112,7 @@ MAKE_PROPERTY(Beta)
             NPStressNode* newNode = [[NPStressNode alloc] initWithId:i];
             NPObject* data = [[NPObject alloc] init];
             [newNode setPayload:data];
-            [data release];
+            // 注意：不再手动 [data release]，由 dealloc 自动释放 _payload
             
             // 协议调用测试
             [newNode doD]; 

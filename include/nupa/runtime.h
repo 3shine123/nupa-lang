@@ -40,14 +40,14 @@ typedef struct {
 } SEL;
 
 typedef struct NPClass NPClass;
-typedef struct __nupa_root __nupa_root;
+typedef struct nupa_root nupa_root;
 typedef struct NPObject NPObject;
 typedef NPObject *id;
 typedef NPObject *nupa_id_t;
 
-/* Always declared: the transpiler's nupa_meta_init() references it.
+/* Always declared: the transpiler's nupa_metaInit() references it.
  * Definition comes from the user (freestanding) or Foundation (host). */
-extern NPClass nupa___nupa_root_class;
+extern NPClass NUPA_CLASS_$_nupa_root;
 
 /* memcpy is used by the @try/@catch @finally jmp_buf save/restore
  * (the generated code always calls memcpy for nesting save/restore).
@@ -58,9 +58,9 @@ void *memcpy(void *dst, const void *src, size_t n);
 
 #ifdef __NUPA_FREESTANDING
 
-#ifndef __NUPA_ROOT_DEFINED
-#define __NUPA_ROOT_DEFINED
-struct __nupa_root {
+#ifndef NUPA_ROOT_DEFINED
+#define NUPA_ROOT_DEFINED
+struct nupa_root {
     struct NPClass *isa;
     uint32_t retain_count;
 };
@@ -84,6 +84,10 @@ struct NPClass {
     void *class_vtable;
     struct NPProtocol **protocols;
     int protocol_count;
+    /* Populated by nupa_metaInit() (codegen). nupa_release() calls it when the
+     * retain count reaches 0, so per-class dealloc cleanup (free-ing ivars)
+     * actually runs. NULL if the class defines no instance dealloc. */
+    void (*dealloc)(NPObject *, SEL);
 };
 
 // ─── Protocol types ──────────────────────────────────────────────────────────
@@ -151,16 +155,13 @@ extern __thread id     __nupa_exception_value;
 NPObject *nupa_retain(NPObject *obj);
 void nupa_release(NPObject *obj);
 NPObject *nupa_autorelease(NPObject *obj);
-
-NPObject *nupa_alloc(NPClass *cls);
-NPObject *nupa_init(NPObject *self);
 BOOL nupa_isKindOf(NPObject *obj, NPClass *cls);
 
 // ─── Autorelease pool API ────────────────────────────────────────────────────────
 
 typedef struct nupa_autoreleasepool nupa_autoreleasepool_t;
-nupa_autoreleasepool_t *nupa_autoreleasepool_push(void);
-void nupa_autoreleasepool_pop(nupa_autoreleasepool_t *pool);
+nupa_autoreleasepool_t *nupa_autoreleasepoolPush(void);
+void nupa_autoreleasepoolPop(nupa_autoreleasepool_t *pool);
 
 // ─── Internal API (for runtime implementation) ───────────────────────────────────
 
@@ -186,14 +187,14 @@ void _Block_release(const void *aBlock);
 
 // ─── Weak reference API ─────────────────────────────────────────────────────────
 
-void nupa_weak_register(NPObject **weak_loc, NPObject *target);
-void nupa_weak_unregister(NPObject **weak_loc);
-void nupa_weak_clear_all(NPObject *target);
+void nupa_weakRegister(NPObject **weak_loc, NPObject *target);
+void nupa_weakUnregister(NPObject **weak_loc);
+void nupa_weakClearAll(NPObject *target);
 
 // ─── String literals ──────────────────────────────────────────────────────────
 
-NPObject *nupa_string_from_cstr(const char *cstr);
-void nupa_weak_auto_cleanup(void *ptr);
+NPObject *nupa_stringFromCstr(const char *cstr);
+void nupa_weakAutoCleanup(void *ptr);
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 

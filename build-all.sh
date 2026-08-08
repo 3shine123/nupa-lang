@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# build-all.sh — 一键交叉编译 nupac 到 5 个目标平台
+# build-all.sh — 一键交叉编译 nupac 到 8 个目标平台
 # 依赖：zig 0.14+（brew install zig），mingw-w64（brew install mingw-w64），
 #       rustup 管理的 Rust
 set -euo pipefail
@@ -16,6 +16,9 @@ TARGETS=(
     "x86_64-unknown-linux-musl" # Linux x86_64（静态链接）
     "aarch64-unknown-linux-musl" # Linux ARM64（静态链接）
     "x86_64-pc-windows-gnu"     # Windows x86_64（MinGW）
+    "x86_64-unknown-freebsd"    # FreeBSD x86_64
+    "i686-unknown-freebsd"      # FreeBSD x86
+    "x86_64-unknown-netbsd"     # NetBSD x86_64
 )
 
 # ── 确保所有 target 已安装 ──
@@ -44,7 +47,38 @@ rustflags = ["-C", "link-self-contained=yes"]
 linker = "x86_64-w64-mingw32-gcc"
 EOF
 
+# BSD 目标需要 zig cc 作为链接器，且每个目标有独立的 zig-cc wrapper
+ZIG_CC_DIR="$(pwd)"
+for bsd_target in x86_64-unknown-freebsd i686-unknown-freebsd x86_64-unknown-netbsd; do
+    case "$bsd_target" in
+        x86_64-unknown-freebsd) zig_linker="${ZIG_CC_DIR}/zig-cc-x86_64-freebsd.sh" ;;
+        i686-unknown-freebsd)   zig_linker="${ZIG_CC_DIR}/zig-cc-i686-freebsd.sh" ;;
+        x86_64-unknown-netbsd)  zig_linker="${ZIG_CC_DIR}/zig-cc-x86_64-netbsd.sh" ;;
+    esac
+    cat >> .cargo/config.toml <<EOF
+
+[target.$bsd_target]
+linker = "$zig_linker"
+EOF
+done
+
 # ── 编译 ──
+# 为 FreeBSD 目标创建 stub 共享库（Rust std 引用了一些 FreeBSD 特有库）
+for _arch in x86_64 i386; do
+    _dir="target/bsd-stubs"
+    [ "$_arch" = "i386" ] && _dir="target/bsd-stubs-i386"
+    mkdir -p "$_dir"
+    for _lib in devstat procstat kvm memstat util rt execinfo; do
+        _stub="$_dir/stub_$_lib.c"
+        if [ ! -f "$_stub" ]; then
+            echo "void nupa_stub_${_lib}(void) {}" > "$_stub"
+            _ztarget="${_arch}-freebsd-none"
+            [ "$_arch" = "i386" ] && _ztarget="x86-freebsd-none"
+            zig cc -target "$_ztarget" -shared -fPIC -o "$_dir/lib$_lib.so" "$_stub" 2>/dev/null
+        fi
+    done
+done
+
 for t in "${TARGETS[@]}"; do
     echo "==> Building $t ..."
     # 非 Apple 目标需要用 zig cc 作为 C 编译器（编译 runtime.c）
@@ -52,11 +86,20 @@ for t in "${TARGETS[@]}"; do
         aarch64-apple-darwin|x86_64-apple-darwin)
             cargo build --release --target "$t" 2>&1 | tail -3
             ;;
+        x86_64-unknown-freebsd|i686-unknown-freebsd)
+            _stubdir="target/bsd-stubs"
+            [ "$t" = "i686-unknown-freebsd" ] && _stubdir="target/bsd-stubs-i386"
+            CC_ENV="CC_$(echo "$t" | tr '[:upper:]-' '[:lower:]_' | sed 's/\./_/g' | tr '-' '_')"
+            export "$CC_ENV=$ZIG_CC"
+            AR_ENV="AR_$(echo "$t" | tr '[:upper:]-' '[:lower:]_' | sed 's/\./_/g' | tr '-' '_')"
+            export "$AR_ENV=$ZIG_AR"
+            RUSTFLAGS="-C link-arg=-Wl,--allow-shlib-undefined -C link-arg=-L$(pwd)/$_stubdir" \
+                cargo build --release --target "$t" 2>&1 | tail -3
+            ;;
         *)
             CC_ENV="CC_$(echo "$t" | tr '[:upper:]-' '[:lower:]_' | sed 's/\./_/g' | tr '-' '_')"
-    export "$CC_ENV=$ZIG_CC"
+            export "$CC_ENV=$ZIG_CC"
             AR_ENV="AR_$(echo "$t" | tr '[:upper:]-' '[:lower:]_' | sed 's/\./_/g' | tr '-' '_')"
-            # macOS 宿主 ar 无法打包非 Mach-O 对象，musl 等目标改用 zig ar
             export "$AR_ENV=$ZIG_AR"
             cargo build --release --target "$t" 2>&1 | tail -3
             ;;
@@ -110,6 +153,9 @@ pack_name() {
         x86_64-unknown-linux-musl)  echo "nupa-x86_64-unknown-linux-musl" ;;
         aarch64-unknown-linux-musl) echo "nupa-aarch64-unknown-linux-musl" ;;
         x86_64-pc-windows-gnu)      echo "nupa-x86_64-pc-windows-gnu" ;;
+        x86_64-unknown-freebsd)     echo "nupa-x86_64-unknown-freebsd" ;;
+        i686-unknown-freebsd)       echo "nupa-i686-unknown-freebsd" ;;
+        x86_64-unknown-netbsd)      echo "nupa-x86_64-unknown-netbsd" ;;
         *) echo "nupa-$1" ;;
     esac
 }

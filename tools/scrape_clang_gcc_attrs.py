@@ -1,0 +1,165 @@
+#!/usr/bin/env python3
+"""Regenerate the nupa attribute classification table from the official
+Clang and GCC documentation.
+
+Scrapes:
+  - Clang AttributeReference (https://clang.llvm.org/docs/AttributeReference.html)
+  - GCC manual: Common-Attributes.html + all target-specific *-Attributes.html,
+    cross-checked against the authoritative Attribute-Index.html page.
+
+Output (in crates/attrs/src/):
+  - table.rs  (generated Rust: COMMON_ATTRS / CLANG_ONLY_ATTRS / GCC_ONLY_ATTRS)
+
+Usage:
+  python3 tools/scrape_clang_gcc_attrs.py            # fetch docs + emit table
+  python3 tools/scrape_clang_gcc_attrs.py --offline  # reuse cached HTML
+"""
+import argparse
+import html
+import os
+import re
+import subprocess
+import urllib.request
+
+GCC_BASE = "https://gcc.gnu.org/onlinedocs/gcc/"
+CLANG_URL = "https://clang.llvm.org/docs/AttributeReference.html"
+
+GCC_ATTR_PAGES = [
+    "Common-Attributes", "AArch64-Attributes", "AMD-GCN-Attributes",
+    "ARC-Attributes", "ARM-Attributes", "AVR-Attributes", "Blackfin-Attributes",
+    "BPF-Attributes", "C_002b_002b-Attributes", "C-SKY-Attributes",
+    "Epiphany-Attributes", "H8_002f300-Attributes", "IA-64-Attributes",
+    "LoongArch-Attributes", "M32R_002fD-Attributes", "m68k-Attributes",
+    "MicroBlaze-Attributes", "Microsoft-Windows-Attributes",
+    "MIPS-Attributes", "MSP430-Attributes", "NDS32-Attributes",
+    "Nvidia-PTX-Attributes", "PowerPC-Attributes", "RISC-V-Attributes",
+    "RL78-Attributes", "RX-Attributes", "S_002f390-Attributes",
+    "SH-Attributes", "Symbian-OS-Attributes", "V850-Attributes",
+    "Visium-Attributes", "x86-Attributes", "Xstormy16-Attributes",
+    "Xtensa-Attributes",
+]
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+CACHE = os.path.join(HERE, ".attr_cache")
+TABLE = os.path.join(HERE, "..", "crates", "attrs", "src", "table.rs")
+
+
+def fetch(url, cache_name):
+    os.makedirs(CACHE, exist_ok=True)
+    path = os.path.join(CACHE, cache_name)
+    if os.path.exists(path) and os.path.getsize(path) > 0:
+        return open(path, encoding="utf-8", errors="replace").read()
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+    data = urllib.request.urlopen(req, timeout=60).read().decode("utf-8", "replace")
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(data)
+    return data
+
+
+def clang_attrs(html_doc):
+    out = set()
+    for m in re.finditer(r'<h3[^>]*>\s*<a class="toc-backref"[^>]*>([^<]+)</a>', html_doc):
+        txt = html.unescape(m.group(1)).strip()
+        if txt.startswith("#pragma"):
+            continue
+        for part in txt.split(","):
+            part = part.strip()
+            if not part:
+                continue
+            mm = re.match(r"\[\[clang::([A-Za-z_][A-Za-z0-9_]*)", part)
+            if mm:
+                out.add(mm.group(1))
+                continue
+            if re.match(r"^[\[\(]", part):
+                continue
+            if " " in part and "(" not in part:
+                continue
+            ident = re.match(r"[A-Za-z_][A-Za-z0-9_]*", part)
+            if ident:
+                out.add(ident.group(0))
+    return out
+
+
+def gcc_index_attrs(html_doc):
+    """Authoritative name list from the manual's Attribute-Index."""
+    out = set()
+    for m in re.finditer(
+        r'<td class="printindex-index-entry"><a href="[^"]*#index-([^\"]+)">(.*?)</a></td>',
+        html_doc, re.S,
+    ):
+        txt = re.sub(r"<[^>]+>", "", m.group(2)).strip()
+        name = txt or html.unescape(m.group(1))
+        ident = re.match(r"[A-Za-z_][A-Za-z0-9_]*", name)
+        if ident:
+            out.add(ident.group(0))
+    return out
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--offline", action="store_true", help="reuse cached HTML")
+    args = ap.parse_args()
+
+    if args.offline and not os.path.isdir(CACHE):
+        print("no cache; run online first")
+        return 1
+
+    print("fetching clang AttributeReference...")
+    clang_doc = fetch(CLANG_URL, "clang.html")
+    clang = clang_attrs(clang_doc)
+
+    print(f"fetching {len(GCC_ATTR_PAGES)} gcc attribute pages + index...")
+    for page in GCC_ATTR_PAGES:
+        fetch(f"{GCC_BASE}{page}.html", f"gcc_{page}.html")
+    gcc_index_doc = fetch(f"{GCC_BASE}Attribute-Index.html", "gcc_Attribute-Index.html")
+    gcc = gcc_index_attrs(gcc_index_doc)
+
+    common = sorted(set(clang) & set(gcc))
+    clang_only = sorted(set(clang) - set(gcc))
+    gcc_only = sorted(set(gcc) - set(clang))
+
+    print(f"Common={len(common)} ClangOnly={len(clang_only)} GccOnly={len(gcc_only)}")
+
+    def rust_array(name, names):
+        lines = [f"pub const {name}: &[&str] = &["]
+        for n in names:
+            lines.append(f'    "{n}",')
+        lines.append("];")
+        return "\n".join(lines)
+
+    body = "\n\n".join(
+        rust_array("COMMON_ATTRS", common)
+        + "\n\n"
+        + rust_array("CLANG_ONLY_ATTRS", clang_only)
+        + "\n\n"
+        + rust_array("GCC_ONLY_ATTRS", gcc_only)
+    )
+
+    out = f"""// Generated by tools/scrape_clang_gcc_attrs.py — DO NOT EDIT BY HAND.
+//
+// Attribute capability matrix scraped from the official docs:
+//   - Clang: https://clang.llvm.org/docs/AttributeReference.html
+//   - GCC:   https://gcc.gnu.org/onlinedocs/gcc/Attribute-Index.html
+//
+// Classification:
+//   COMMON_ATTRS     gcc AND clang both accept (usable in --backend=portable)
+//   CLANG_ONLY_ATTRS only clang accepts     (usable in --backend=clang)
+//   GCC_ONLY_ATTRS   only gcc accepts       (usable in --backend=gcc)
+// Attributes absent from the table are "unknown" — see attrs::classify.
+
+{body}
+"""
+    os.makedirs(os.path.dirname(TABLE), exist_ok=True)
+    with open(TABLE, "w", encoding="utf-8") as f:
+        f.write(out)
+    print(f"wrote {TABLE}")
+
+    try:
+        subprocess.run(["rustfmt", TABLE], check=True)
+    except FileNotFoundError:
+        pass
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

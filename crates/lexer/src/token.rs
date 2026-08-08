@@ -187,6 +187,9 @@ pub enum KeywordKind {
 
     Asm,
 
+    Extension,
+    Alignof,
+
     None,
 }
 

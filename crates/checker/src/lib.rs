@@ -66,6 +66,9 @@ impl Checker {
             AstExprData::Char(_) => Some(AstType::new(TypePrim::Char)),
             AstExprData::Bool(_) => Some(AstType::new(TypePrim::Bool)),
             AstExprData::VarRef { name, .. } => {
+                if name.starts_with("__") {
+                    return Some(AstType::new(TypePrim::Int));
+                }
                 for scope in self.scope_vars.iter().rev() {
                     if scope.contains(name) {
                         return Some(AstType::new(TypePrim::Int));
@@ -139,6 +142,11 @@ impl Checker {
             AstExprData::DictLit { .. } => Some(AstType::new(TypePrim::Id)),
             AstExprData::Block { .. } => Some(AstType::new(TypePrim::Id)),
             AstExprData::Sizeof { .. } => {
+                let mut t = AstType::new(TypePrim::Long);
+                t.is_pointer = false;
+                Some(t)
+            }
+            AstExprData::Alignof(_) => {
                 let mut t = AstType::new(TypePrim::Long);
                 t.is_pointer = false;
                 Some(t)

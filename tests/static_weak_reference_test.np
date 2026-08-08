@@ -178,6 +178,9 @@ int main(int argc, const char* argv[])
         
         // 强制销毁强引用对象（触发静态 ARC 或手动 release 释放）
         // 在这里，转译器必须在底层静态织入代码，将 hunterDrone->_parentStation、weakMonitorA、weakMonitorB 全部置为 nil！
+        // 注意：tianheCore 的 dealloc 会释放 _activeDrone（hunterDrone），
+        // 所以 hunterDrone 需要先 retain 才能在线程中存活。
+        [hunterDrone retain];
         [tianheCore release]; 
         tianheCore = nil; 
 

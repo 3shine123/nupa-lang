@@ -4,3 +4,4 @@
 #include "nupa/runtime.h"
 
 #import "NPObject.nh"
+#import "NPObject.np"

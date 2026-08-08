@@ -182,14 +182,22 @@ def process_np(np_file: str, tmpdir: Path) -> tuple[str, bool, list[str], str]:
     if not _has_main(np_path):
         return rel, False, ["FAIL (no main entry)"], "FAIL"
 
-    # Auto-include sibling .s assembly files: `name.s` linked alongside `name.np`
+    # Auto-include sibling assembly (.s) files: link alongside the .np
     asm_args: list[str] = []
     sibling_s = np_path.with_suffix(".s")
     if sibling_s.exists():
         asm_args = ["-asm", str(sibling_s)]
+    # In the mega_fusion folder, auto-link sibling hand-written C helpers (.c).
+    # Avoid linking generated .c outputs in other subdirs (duplicate symbols).
+    if "mega_fusion" in np_path.parts:
+        sibling_c = np_path.with_suffix(".c")
+        if sibling_c.exists():
+            asm_args += ["-asm", str(sibling_c)]
+    # Add the test's directory to the include path so `#include "header.h"` works
+    inc_args = ["-I", str(np_path.parent)]
 
     # Try with ARC first
-    cmd = [str(NUPAC), "run", str(np_path)] + asm_args
+    cmd = [str(NUPAC), "run", str(np_path)] + asm_args + inc_args
     stdout, stderr, rc, timed_out = _run_np(cmd, np_path, RUN_TIMEOUT + 2)
 
     if timed_out:
@@ -200,7 +208,7 @@ def process_np(np_file: str, tmpdir: Path) -> tuple[str, bool, list[str], str]:
         return rel, True, out_lines, "PASS"
 
     # ARC failed — retry with MRC
-    mrc_cmd = [str(NUPAC), "run", str(np_path), "-fno-nupa-arc"] + asm_args
+    mrc_cmd = [str(NUPAC), "run", str(np_path), "-fno-nupa-arc"] + asm_args + inc_args
     mrc_stdout, mrc_stderr, mrc_rc, mrc_timed_out = _run_np(mrc_cmd, np_path, RUN_TIMEOUT + 2)
 
     if mrc_timed_out:

@@ -172,6 +172,9 @@ int main(int argc, const char* argv[])
         
         // 强制销毁强引用对象
         // 转译器此时必须静态发挥作用，将 gundamMech->_masterCarrier, tacticalMonitor1, tacticalMonitor2 全部在底层重置为 NULL！
+        // 注意：alphaCarrier 的 dealloc 会释放 _assignedMech（gundamMech），
+        // 所以 gundamMech 需要先 retain 才能在线程中存活。
+        [gundamMech retain];
         [alphaCarrier release]; 
         alphaCarrier = nil; 
 
