@@ -95,15 +95,20 @@ fn insert_releases_before(stmts: &mut Vec<AstStmt>, pos: usize, vars: &mut Vec<S
 // ─── local analysis (directly inserts releases into AST) ───────────────────
 
 // One scope frame on the analysis stack. `vars` are retained object locals
-// declared in this scope; `inside_loop` marks a loop body so that break/continue
-// only release variables declared within the loop (not its enclosing scopes).
+// declared in this scope; `declared` lists every variable declared in this
+// scope (object-typed) so a later assignment like `t = [[T alloc] init]` after
+// a bare `T *t;` can be registered as a retained local. Statics/globals are
+// never declared inside the analyzed body, so they stay exempt. `inside_loop`
+// marks a loop body so that break/continue only release variables declared
+// within the loop (not its enclosing scopes).
 struct Scope {
     vars: Vec<String>,
+    declared: Vec<String>,
     inside_loop: bool,
 }
 
 impl Scope {
-    fn new(inside_loop: bool) -> Self { Scope { vars: Vec::new(), inside_loop } }
+    fn new(inside_loop: bool) -> Self { Scope { vars: Vec::new(), declared: Vec::new(), inside_loop } }
 }
 
 // Collect all live vars in scopes `stack[from..]` (deduped, top-level last).
@@ -132,6 +137,11 @@ pub fn arc_local_analyze(body: &mut AstStmt, _cfg: &Cfg, method_name: &str) -> A
 
         let mut i = 0;
         while i < stmts.len() {
+            // ── @noarc blocks: skip entirely (no ARC analysis) ──
+            if matches!(stmts[i].data, AstStmtData::NoArc(_)) {
+                i += 1;
+                continue;
+            }
             // ── Handle nested scopes (recurse) ──
             if is_scope_stmt(&stmts[i]) {
                 let inner: *mut Vec<AstStmt> = match &mut stmts[i].data {
@@ -161,6 +171,9 @@ pub fn arc_local_analyze(body: &mut AstStmt, _cfg: &Cfg, method_name: &str) -> A
                             }
                         }
                     }
+                }
+                if let Some(ref name) = d.name {
+                    stack[my_idx].declared.push(name.clone());
                 }
                 i += 1;
                 continue;
@@ -296,6 +309,22 @@ pub fn arc_local_analyze(body: &mut AstStmt, _cfg: &Cfg, method_name: &str) -> A
                     AstExprData::FuncCall { name, args, .. } if name == "nupa_release" && args.len() == 1 => {
                         if let AstExprData::VarRef { name, .. } = &args[0].data {
                             drop_var(stack, name);
+                        }
+                    }
+                    AstExprData::Assign { target, value } => {
+                        // `t = [[T alloc] init]` written after a bare `T *t;`
+                        // declaration: the variable now owns a retained object.
+                        // Only register it if it was declared in the current
+                        // scope (never statics/globals, which are declared at
+                        // impl/namespace level and are exempt from ARC).
+                        if ownership_for_expr(value) == Ownership::Retained {
+                            if let AstExprData::VarRef { name, .. } = &target.data {
+                                let declared_here = stack[my_idx].declared.contains(name);
+                                let already = collect_vars(stack, my_idx).contains(name);
+                                if declared_here && !already {
+                                    stack[my_idx].vars.push(name.clone());
+                                }
+                            }
                         }
                     }
                     _ => {}

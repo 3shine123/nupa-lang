@@ -107,8 +107,8 @@ int main() {
         {
             NPObject *__nupa_tmp_0 = (NPObject_alloc(&nupa_Foo_class, __nupa_sel_alloc));
             Foo * f = ((struct nupa_Foo_vtable *)__nupa_tmp_0->isa->vtable)->init(__nupa_tmp_0, __nupa_sel_init);
-            NPLog("obj: %@", f);
-            NPLog("null: %@", ((void *)(0)));
+            NPLog((NPString *)nupa_stringFromCstr("obj: %s"), f ? [[f description] UTF8String] : "(null)");
+            NPLog((NPString *)nupa_stringFromCstr("null: %s"), (void *)0 ? [[(void *)0 description] UTF8String] : "(null)");
             nupa_release(f);
         }
         nupa_autoreleasepool_pop(__pool);

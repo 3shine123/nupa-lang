@@ -15,9 +15,8 @@ else
     I18N="en"
 fi
 
-# ── 二进制名（Windows 为 .exe） ──
+# ── 二进制名 ──
 BIN="nupac"
-[ -f "$BUNDLE/nupac.exe" ] && BIN="nupac.exe"
 
 # ── 默认安装前缀 ──
 PREFIX="${1:-/opt/nupa}"

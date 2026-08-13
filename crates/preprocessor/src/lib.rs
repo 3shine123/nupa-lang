@@ -14,7 +14,7 @@ mod tests {
         let source = std::fs::read_to_string(&hello).unwrap();
         let include = workspace.join("include").to_str().unwrap().to_string();
         let foundation = workspace.join("include/Foundation").to_str().unwrap().to_string();
-        let pre = Preprocessor::process(&source, hello.to_str().unwrap(), &[include, ".".into(), foundation]).unwrap();
+        let pre = Preprocessor::process(&source, hello.to_str().unwrap(), &[include, ".".into(), foundation], &["__clang__"]).unwrap();
         println!("=== NUPA OUT ===");
         println!("{}", pre.resolved_nupa);
         println!("=== C HEADERS ===");

@@ -1,0 +1,10 @@
+#include <stdio.h>
+#include <stddef.h>
+// 缺口:需要类型名作参数的 __builtin_* 无法解析(int/struct 等是关键字)。
+struct Pt { int x; int y; };
+int main(void) {
+    size_t off = __builtin_offsetof(struct Pt, y);
+    int tc = __builtin_types_compatible_p(int, long);
+    printf("%zu %d\n", off, tc);
+    return 0;
+}

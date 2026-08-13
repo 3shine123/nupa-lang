@@ -72,10 +72,10 @@ int main() {
     {
         nupa_autoreleasepool_t * __pool = nupa_autoreleasepool_push();
         {
-            NPLog("hello world");
-            NPLog("number: %d", 100);
-            NPLog("string: %s", "test");
-            NPLog("percent: 50%%");
+            NPLog((NPString *)nupa_stringFromCstr("hello world"));
+            NPLog((NPString *)nupa_stringFromCstr("number: %d"), 100);
+            NPLog((NPString *)nupa_stringFromCstr("string: %s"), "test");
+            NPLog((NPString *)nupa_stringFromCstr("percent: 50%%"));
         }
         nupa_autoreleasepool_pop(__pool);
     }

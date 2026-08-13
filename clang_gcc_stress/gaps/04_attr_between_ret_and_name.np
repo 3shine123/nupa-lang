@@ -1,0 +1,4 @@
+#include <stdio.h>
+// 缺口:返回类型与函数名之间的 __attribute__ 无法解析。
+void *__attribute__((warn_unused_result)) thing(void);
+int main(void) { return 0; }

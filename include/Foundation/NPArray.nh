@@ -1,0 +1,28 @@
+#ifndef NPARRAY_NH
+#define NPARRAY_NH
+
+#import <Foundation/NPObject.nh>
+
+@interface NPArray : NPObject {
+@public
+    NPObject **_items;
+    size_t _count;
+    size_t _capacity;
+}
+
++ (id)arrayWithObjects:(id *)objs count:(size_t)n;
++ (id)arrayWithObject:(id)obj;
++ (id)array;
+
+- (size_t)count;
+- (id)objectAtIndex:(size_t)index;
+- (id)firstObject;
+- (id)lastObject;
+- (BOOL)containsObject:(id)obj;
+- (size_t)indexOfObject:(id)obj;
+- (id)copy;
+- (NPString *)description;
+
+@end
+
+#endif

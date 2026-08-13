@@ -10,6 +10,11 @@ pub struct Elaborator {
     pub err_msg: String,
     pub ns_prefix: String,
     pub verbose: bool,
+    /// Scope stack of locally-declared variable types. Function/method bodies
+    /// push a scope; `convert_dot_expr` uses this to resolve `obj.field` even
+    /// when the symbol table lookup is shadowed by a same-named variable in an
+    /// inlined library scope (e.g. Foundation's `tmp` vs the user's `tmp`).
+    pub local_types: Vec<std::collections::HashMap<String, CstType>>,
 }
 
 impl Elaborator {
@@ -17,12 +22,37 @@ impl Elaborator {
         Elaborator {
             symtab, result: None, current_class_sym: None,
             has_error: false, err_msg: String::new(), ns_prefix: String::new(),
-            verbose: false,
+            verbose: false, local_types: Vec::new(),
         }
     }
 
     pub fn has_error(&self) -> bool { self.has_error }
     pub fn last_error(&self) -> &str { &self.err_msg }
+
+    fn push_local_scope(&mut self) {
+        self.local_types.push(std::collections::HashMap::new());
+    }
+
+    fn pop_local_scope(&mut self) {
+        self.local_types.pop();
+    }
+
+    /// Record a locally-declared variable's type into the innermost scope.
+    fn register_local_type(&mut self, name: &str, ty: &CstType) {
+        if let Some(scope) = self.local_types.last_mut() {
+            scope.insert(name.to_string(), ty.clone());
+        }
+    }
+
+    /// Look up a local variable's declared type (innermost scope first).
+    fn lookup_local_type(&self, name: &str) -> Option<&CstType> {
+        for scope in self.local_types.iter().rev() {
+            if let Some(t) = scope.get(name) {
+                return Some(t);
+            }
+        }
+        None
+    }
 
     fn ns_fqn(&self, name: &str) -> String {
         // Always check alias list first (applies to all @using forms)
@@ -177,6 +207,10 @@ impl Elaborator {
                 kind: AstExprKind::Alignof, expr_type: None, line, col,
                 data: AstExprData::Alignof(self.convert_type(ty).unwrap_or_else(|| AstType::new(TypePrim::Void))),
             },
+            CstExprData::TypeLiteral(ty) => AstExpr {
+                kind: AstExprKind::TypeLiteral, expr_type: None, line, col,
+                data: AstExprData::TypeLiteral(self.convert_type(ty).unwrap_or_else(|| AstType::new(TypePrim::Void))),
+            },
             CstExprData::Paren(e) => self.convert_expr(e).unwrap_or_else(make_int_expr),
             CstExprData::NumberLit(e) => self.convert_expr(e).unwrap_or_else(make_int_expr),
             CstExprData::Message { receiver, selector, args } => {
@@ -323,7 +357,7 @@ impl Elaborator {
                 AstExpr { kind: AstExprKind::BlockLit, expr_type: None, line, col, data: AstExprData::Block { params: ast_params, return_type: return_type.as_ref().and_then(|t| self.convert_type(t)).map(Box::new), body: body.as_ref().and_then(|b| self.convert_stmt(b)).map(Box::new) } }
             }
             CstExprData::InitList(exprs) => {
-                AstExpr { kind: AstExprKind::ArrayLit, expr_type: None, line, col, data: AstExprData::ArrayLit(exprs.iter().filter_map(|e| self.convert_expr(e)).collect()) }
+                AstExpr { kind: AstExprKind::InitList, expr_type: None, line, col, data: AstExprData::InitList(exprs.iter().filter_map(|e| self.convert_expr(e)).collect()) }
             }
         };
         Some(ae)
@@ -393,8 +427,45 @@ impl Elaborator {
         if let Some(ref st) = self.symtab {
             if let CstExprData::Ident(ref obj_name) = object.data {
                 let mut cls = None;
-                // Try symtab lookup for the object variable
-                if let Some(obj_sym) = st.lookup(obj_name) {
+                // Prefer the current function's LOCAL variable type. The symbol
+                // table is unscoped, so a same-named local in an inlined library
+                // (e.g. `NPObject *tmp`) can shadow the user's typed variable.
+                if let Some(local_ty) = self.lookup_local_type(obj_name).cloned() {
+                    let mut t: Option<&CstType> = Some(&local_ty);
+                    loop {
+                        let (p, is_pt, sub) = match t {
+                            Some(tp) => (tp.prim, tp.is_pointer, tp.subtype.as_ref().map(|s| &**s)),
+                            None => break,
+                        };
+                        // A named type that names a class resolves directly.
+                        if p == TypePrim::Named || p == TypePrim::Id {
+                            if let Some(name) = t.and_then(|tp| tp.name.as_ref()) {
+                                if let Some(found_cls) = st.find_class(name) {
+                                    cls = Some(found_cls);
+                                    break;
+                                }
+                            }
+                            if !is_pt { break; }
+                        }
+                        if is_pt {
+                            if let Some(s) = sub {
+                                if let Some(ref sname) = s.name {
+                                    if let Some(found_cls) = st.find_class(sname) {
+                                        cls = Some(found_cls);
+                                        break;
+                                    }
+                                }
+                            }
+                            t = sub;
+                        } else {
+                            break;
+                        }
+                    }
+                }
+                // Try symtab lookup for the object variable (only if local type
+                // resolution didn't already pin a class).
+                if cls.is_none() {
+                    if let Some(obj_sym) = st.lookup(obj_name) {
                     match &obj_sym.data {
                         SymbolData::Variable { var_type, .. } | SymbolData::Ivar { ivar_type: var_type, .. } => {
                             let mut t = var_type.as_ref().map(|t| &**t);
@@ -431,6 +502,7 @@ impl Elaborator {
                             }
                         }
                         _ => {}
+                        }
                     }
                 }
                 // Try to find the property or ivar in the class
@@ -539,6 +611,9 @@ impl Elaborator {
             CstStmtData::Autoreleasepool(body) => {
                 AstStmt { kind: AstStmtKind::Autoreleasepool, line, col, data: AstStmtData::Autoreleasepool(Box::new(self.convert_stmt(body).unwrap_or_else(make_compound_stmt))) }
             }
+            CstStmtData::NoArc(body) => {
+                AstStmt { kind: AstStmtKind::NoArc, line, col, data: AstStmtData::NoArc(Box::new(self.convert_stmt(body).unwrap_or_else(make_compound_stmt))) }
+            }
             CstStmtData::Asm { is_volatile, is_goto, template, outputs, inputs, clobbers, labels } => {
                 let mut conv = |ops: &Vec<CstAsmOperand>| -> Vec<AstAsmOperand> {
                     ops.iter().map(|op| AstAsmOperand {
@@ -569,6 +644,12 @@ impl Elaborator {
         let ad = match &cd.data {
             CstDeclData::Variable { var_type, initializer, is_static, is_extern, is_const, is_block_qual, is_weak, .. } => {
                 let effective_type = override_type.or_else(|| var_type.clone());
+                // Register local variable types so dot-expr resolution sees the
+                // declared type even when the symbol-table lookup is shadowed.
+                // (Top-level/static vars have no pushed scope → no-op.)
+                if let (Some(ref ty), Some(ref name)) = (effective_type.as_ref(), cd.name.as_ref()) {
+                    self.register_local_type(name, ty);
+                }
                 let mut base_ad = AstDecl { kind: AstDeclKind::Variable, line, col, name: cd.name.clone(), data: AstDeclData::Variable { var_type: effective_type.as_ref().and_then(|t| self.convert_type(t)).map(Box::new), init: initializer.as_ref().map(|i| Box::new(self.convert_expr(i).unwrap_or_else(make_int_expr))), is_static: *is_static, is_extern: *is_extern, is_const: *is_const, is_block_qual: *is_block_qual, is_weak: *is_weak, next: None }, attributes: cd.attributes.clone() };
                 // Build the next chain (comma-separated declarators) from cd.next
                 let base_type = effective_type.clone();
@@ -598,9 +679,26 @@ impl Elaborator {
                 }
                 base_ad
             }
-            CstDeclData::Function { return_type, params, body, .. } => {
+            CstDeclData::Function { return_type, params, has_variadic, body, .. } => {
                 let func_sym = cd.name.as_ref().and_then(|n| self.symtab.as_ref()?.lookup(n)).map(|s| s.name.clone());
-                AstDecl { kind: AstDeclKind::Function, line, col, name: cd.name.clone(), data: AstDeclData::Function { func_sym, return_type: return_type.as_ref().and_then(|t| self.convert_type(t)).map(Box::new), params: params.clone(), body: body.as_ref().and_then(|b| self.convert_stmt(b)).map(Box::new) }, attributes: cd.attributes.clone() }
+                let converted_body = body.as_ref().map(|b| {
+                    self.push_local_scope();
+                    // Register the function's parameter types into the local scope
+                    // before converting the body, so dot-expr resolution can use them.
+                    let mut p = params.as_ref().map(|p| &**p);
+                    while let Some(param) = p {
+                        if let Some(ref name) = param.name {
+                            if let Some(ref pt) = param.par_type {
+                                self.register_local_type(name, pt);
+                            }
+                        }
+                        p = param.next.as_ref().map(|n| &**n);
+                    }
+                    let ast = self.convert_stmt(b);
+                    self.pop_local_scope();
+                    ast
+                });
+                AstDecl { kind: AstDeclKind::Function, line, col, name: cd.name.clone(), data: AstDeclData::Function { func_sym, return_type: return_type.as_ref().and_then(|t| self.convert_type(t)).map(Box::new), params: params.clone(), body: converted_body.and_then(|b| b.map(Box::new)), has_variadic: *has_variadic }, attributes: cd.attributes.clone() }
             }
             CstDeclData::Class { superclass, ivars, properties, methods, impl_vars, .. } => {
                 let fqn = self.ns_fqn(cd.name.as_deref().unwrap_or(""));
@@ -667,7 +765,22 @@ impl Elaborator {
                         p = param.next.as_mut().map(|n| &mut **n);
                     }
                 }
-                AstDecl { kind: AstDeclKind::Method, line, col, name: cd.name.clone(), data: AstDeclData::Method { method_sym: None, is_class_method: *is_class_method, return_type: return_type.as_ref().and_then(|t| self.convert_type(t)).map(Box::new), params: resolved_params, body: body.as_ref().and_then(|b| self.convert_stmt(b)).map(Box::new) }, attributes: cd.attributes.clone() }
+                let converted_body = body.as_ref().map(|b| {
+                    self.push_local_scope();
+                    let mut p = resolved_params.as_ref().map(|b| &**b);
+                    while let Some(param) = p {
+                        if let Some(ref name) = param.name {
+                            if let Some(ref pt) = param.par_type {
+                                self.register_local_type(name, pt);
+                            }
+                        }
+                        p = param.next.as_ref().map(|n| &**n);
+                    }
+                    let ast = self.convert_stmt(b);
+                    self.pop_local_scope();
+                    ast
+                });
+                AstDecl { kind: AstDeclKind::Method, line, col, name: cd.name.clone(), data: AstDeclData::Method { method_sym: None, is_class_method: *is_class_method, return_type: return_type.as_ref().and_then(|t| self.convert_type(t)).map(Box::new), params: resolved_params, body: converted_body.and_then(|b| b.map(Box::new)) }, attributes: cd.attributes.clone() }
             }
             CstDeclData::Ivar { ivar_type, is_weak, .. } => {
                 let ivar_sym = cd.name.as_ref().and_then(|n| self.symtab.as_ref()?.lookup(n)).map(|s| s.name.clone());
@@ -719,7 +832,10 @@ impl Elaborator {
                 };
                 AstDecl { kind: AstDeclKind::Asm, line, col, name: cd.name.clone(), data: AstDeclData::Asm { is_volatile: *is_volatile, is_goto: *is_goto, template: template.clone(), outputs: conv(outputs), inputs: conv(inputs), clobbers: clobbers.clone(), labels: labels.clone() }, attributes: cd.attributes.clone() }
             }
-            CstDeclData::Forward(_) => return None,
+            CstDeclData::Forward(names) => {
+                let fqns: Vec<String> = names.iter().map(|n| self.ns_fqn(n)).collect();
+                AstDecl { kind: AstDeclKind::ForwardClass, line, col, name: None, data: AstDeclData::ForwardClass { names: fqns }, attributes: Vec::new() }
+            }
             CstDeclData::ProtocolData { .. } => return None,
             CstDeclData::Using { .. } => {
                 // @using is handled by the binder; no AST decl needed

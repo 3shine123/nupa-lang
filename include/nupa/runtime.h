@@ -42,6 +42,7 @@ typedef struct {
 typedef struct NPClass NPClass;
 typedef struct nupa_root nupa_root;
 typedef struct NPObject NPObject;
+typedef struct NPString NPString;
 typedef NPObject *id;
 typedef NPObject *nupa_id_t;
 
@@ -175,9 +176,9 @@ void np_object_dealloc(np_object_t *obj);
 
 // ─── Logging (like NSLog / NSObjCRuntime.h) ───────────────────────────────────
 
-void NPLog(const char *format, ...);
+void NPLog(NPString *format, ...);
 #ifndef __NUPA_FREESTANDING
-void __NPLogv(const char *format, va_list args);
+void __NPLogv(NPString *format, va_list args);
 #endif
 
 // ─── Block runtime (Clang Blocks ABI) ─────────────────────────────────────────

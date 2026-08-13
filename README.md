@@ -333,6 +333,94 @@ NPObject *obj = [[NPObject alloc] init];
 [obj release]; // MRC manual release
 ```
 
+### C Bridge (`--emit-bridge-header`)
+
+Nupa transpiles to C, but calling Nupa object methods from C normally requires verbose vtable-index and SEL-constant boilerplate. `--emit-bridge-header` generates a header with `static inline` wrappers for every method, so C code can call Nupa objects like ordinary C functions.
+
+**Usage**: transpile a Nupa library to C, then generate the bridge header:
+
+```bash
+nupac -rewrite-nupa lib.np -o lib.c -emit-bridge-header lib.h
+```
+
+Then include the bridge header from C:
+
+```c
+#include "lib.h"
+
+int main(void) {
+    nupa_metaInit();  // required before using any Nupa objects
+
+    // Class method: nupa_<Class>_<method>(params...)
+    NPString *s = nupa_NPString_stringWithUTF8String_("Hello");
+
+    // Instance method: nupa_<Class>_<method>(self, params...)
+    size_t len = nupa_NPString_length(s);
+    const char *cstr = nupa_NPString_UTF8String(s);
+
+    // Nested message send (like Nupa's [[s UTF8String] ...])
+    const char *nested = nupa_NPString_UTF8String(
+        nupa_NPString_stringWithUTF8String_("nested")
+    );
+
+    // Multi-argument message send (like Nupa's [arr replaceObjectAtIndex:0 withObject:obj])
+    NPArray *arr = nupa_NPArray_arrayWithObject_(s);
+    nupa_NPArray_replaceObjectAtIndex_withObject_(arr, 0, s);
+
+    // Each colon in the selector becomes an underscore in the function name:
+    //   [obj foo:arg1 bar:arg2] → nupa_<Class>_foo_bar_(obj, arg1, arg2)
+    //   [m replaceCharactersInRange:rng withString:str]
+    //   → nupa_NPMutableString_replaceCharactersInRange_withString_(m, rng, str)
+}
+```
+
+Link against the transpiled `.c` and `runtime.c`:
+
+```bash
+clang caller.c lib.c include/nupa/runtime.c -I include -o app
+```
+
+⚠️ The caller's `main` must call `nupa_metaInit()` first. The bridge header uses `sel_registerName` to resolve selectors at runtime, so it does **not** depend on the codegen-generated `static const` SEL constants (which are file-local and invisible across translation units).
+
+#### Memory Management from C
+
+Nupa's **ARC is compile-time and applies only to `.np` source** — it never sees calls coming from C. When C code calls bridge functions, objects are **not** automatically retained or released. Manage them manually, following the ObjC memory-management naming convention:
+
+| Method family | Caller owns? | What C code must do |
+|---|---|---|
+| `alloc`, `new`, `copy`, `mutableCopy` | ✅ +1 | Must call `nupa_release(obj)` when done |
+| `init` | ❌ consumes `alloc` | Nothing |
+| everything else (e.g. `stringWithUTF8String:`) | ❌ autoreleased | Nothing, but `nupa_retain(obj)` if it must outlive the current autorelease pool |
+
+```c
+#include "lib.h"
+
+int main(void) {
+    nupa_metaInit();
+    nupa_autoreleasepool_t *pool = nupa_autoreleasepoolPush();
+
+    // +1 (returns autoreleased convenience object); use within this pool only
+    NPString *s = nupa_NPString_stringWithUTF8String_("hello");
+    printf("%s\n", nupa_NPString_UTF8String(s));
+
+    // If it must outlive the pool: retain now, release later
+    NPString *t = nupa_NPString_stringWithUTF8String_("world");
+    nupa_retain(t);
+    nupa_autoreleasepoolPop(pool);      // t survives (was retained)
+    printf("%s\n", nupa_NPString_UTF8String(t));
+    nupa_release(t);
+
+    // alloc-family returns +1 → must release
+    NPString *u = nupa_NPString_alloc(nupa_NPString_stringWithUTF8String_("x") /* placeholder */);
+    // (real usage: nupa_NPString_copy(s) returns +1, release it)
+    NPString *copy = nupa_NPString_copy(s);
+    nupa_release(copy);
+}
+
+```
+
+`nupa_retain`, `nupa_release`, `nupa_autorelease`, `nupa_autoreleasepoolPush`/`nupa_autoreleasepoolPop` are declared in `<nupa/runtime.h>` and work on any Nupa object. This is exactly the manual-retain-count (MRC) model — from the C side you can think of Nupa objects as raw pointers you own or don't own by convention.
+
 ---
 
 ## New Features
@@ -345,6 +433,7 @@ Nupa adds features on top of Objective-C syntax that ObjC itself doesn't have.
 - **C superset** — `@protocol` + conformance, `@property` + `@synthesize`, `instancetype`, `@public` ivars, dot syntax, structs + function pointers, inline asm, C-style casts.
 - **Typed `@catch`** — each catch block now checks `isa == &NUPA_CLASS_$_Class`, so only the matching class enters the handler; multiple catches are properly isolated.
 - **ARC fixes** — scope-stack model no longer releases parent-scope variables at nested scope end; `for`-init object hoisting stops leaks and invalid `for` headers.
+- **`@noarc` block** — block-level MRC: in ARC mode, manual `retain`/`release`/`dealloc`/`autorelease` inside `@noarc { }` is allowed; the block-level analogue of `-fno-nupa-arc` and clang's `-fno-objc-arc`.
 - **`__attribute__` pass-through + `-backend`** — full support for C `__attribute__((...))` and all `__`-prefixed C predefined identifiers (`__FILE__`, `__LINE__`, `__builtin_*`, `__extension__`, `__typeof__`, `__alignof__`, ...); the `-backend` flag controls which compiler-specific attributes are allowed.
 
 ### Implicit Root Class (`nupa_root`)
@@ -598,6 +687,8 @@ Reference counting is managed by compile-time static ARC analysis, not stored in
 
 - Nested namespaces supported (`Game::Entities::Enemy`)
 - Cross-namespace references (`Game::Player *player`)
+- `@class` forward declarations inside namespaces (`@class Player;`) — codegen emits `struct Game__Player;` + `typedef struct Game__Player Game__Player;` so forward-declared types are usable in method signatures
+- Cross-namespace inheritance (`@interface HUD : Engine::Graphics::Renderable`)
 - No prefix convention needed — C symbols are encoded automatically
 - Classes without namespaces remain backward-compatible
 
@@ -637,6 +728,51 @@ Enemy *e = [[Enemy alloc] init];
 - If two `@using` entries import the same short name, the compiler reports an ambiguity error
 - Aliases and short names are valid within the file scope of the `@using` declaration
 
+### `@noarc` Block — Block-level MRC
+
+In ARC mode, the checker forbids manual memory management:
+
+```nupa
+[obj release]; // error: explicit 'release' not allowed in ARC mode
+```
+
+`@noarc { }` scopes a block where you manage memory manually — the block-level analogue of `-fno-nupa-arc` (and clang's `-fno-objc-arc`):
+
+```nupa
+@noarc {
+    [obj retain];
+    [obj release];
+    [obj autorelease];
+}
+```
+
+Key points:
+
+- **Block-level scope** — only statements inside `@noarc { }` are exempt. Everything outside still uses static ARC, and manual `retain`/`release`/`dealloc`/`autorelease` outside the block is a compile error.
+- **No ARC injection** — the ARC analyzer skips `@noarc` blocks entirely, inserting no retain/release for objects used there.
+- **Runtime-method exemption** — the implementations of `retain`/`release`/`dealloc`/`autorelease` themselves may call these methods without `@noarc`.
+- **Whole-program analogue** — `-fno-nupa-arc` switches the whole program to MRC; `@noarc` does the same for a single block.
+- **Foundation** — the NPString/NPMutableString convenience constructors (`+stringWithUTF8String:`, `+stringWithString:`) wrap their deliberate `autorelease` in `@noarc { }`.
+
+---
+
+### Refcount Trace (`-trace-refcount`)
+
+`-trace-refcount` runs a static reference-count simulator over the AST **after** ARC injection, printing a chronological, color-coded trace of every retained object's count, then exits without codegen or compilation. It is a debug aid for verifying that each object is released exactly once (no leaks, no double-releases).
+
+```bash
+nupac -trace-refcount app.np                          # color trace
+nupac -trace-refcount -trace-no-color -trace-max-iters 2 app.np
+```
+
+Options:
+
+- **`-trace-no-color`** — disable ANSI colors (for diffs / CI piping).
+- **`-trace-max-iters <N>`** — how many loop iterations each loop simulates (default 2); every iteration gets fresh `Cat#N` object identities.
+- Colors: **green** = count increased · **blue** = count decreased (still alive) · **cyan** = freed (reached 0) · **red** = double-release/over-release and `possible leak`/`over-released` in the summary · **yellow** = informational untracked-target warnings.
+- Object identity = allocation site (`Class#N` per class); creations are `alloc`/`new`/`copy`/`mutableCopy`-prefixed, `init` chains to its receiver, and `@"..."`/`@[...]` literals.
+- Objects that leave the traced scope are excluded from the leak summary: `return`/`@throw` results, `static` singletons, `@"..."`/`@[...]` literals, and method parameters. A final `== Summary ==` reports live (`possible leak`), over-released (negative count), and freed objects with their allocation positions.
+
 ---
 
 ## Compilation & CLI
@@ -657,6 +793,7 @@ Options:
   -v, --verbose     Show verbose output (including Clang warnings)
   -V, --version     Show version number
   -rewrite-nupa     Output C code only (no compilation)
+  -fnupa-arc        Enable ARC (default)
   -fno-nupa-arc     Disable ARC (manual MRC mode)
   -fno-checker      Skip type checking
   -fno-libc         Bare-metal/freestanding output (no libc, no TLS)
@@ -664,6 +801,12 @@ Options:
   -arch <target>    Build for target architecture (e.g. -arch x86_64)
   -asm <file.s>     Link a real assembly file (repeatable)
   -gen-completions <shell>  Generate shell completion script (zsh|bash|fish)
+  -emit-bridge-header <file.h>  Generate a C bridge header for calling Nupa from C
+
+Refcount trace (debug aid):
+  -trace-refcount                Print a static reference-count trace of each retained object, in source order
+  -trace-max-iters <N>           Loop iterations simulated in the trace (default 2)
+  -trace-no-color                Disable colors in the trace
 ```
 
 ### Build System Integration

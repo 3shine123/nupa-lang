@@ -119,7 +119,7 @@ static void test_import_no_cycle(void) {
     TEST("#import (no cycle)");
     nupa_pp_state_t *s = pp_state_create();
 
-    FILE *h = fopen("/tmp/nupa_test_imported.nh", "w");
+    FILE *h = fopen("/tmp/nupa_test_imported.h", "w");
     fputs("int imported_var;\n", h);
     fclose(h);
 

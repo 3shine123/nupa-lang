@@ -1,9 +1,20 @@
 #!/usr/bin/env bash
-# build-all.sh — 一键交叉编译 nupac 到 8 个目标平台
-# 依赖：zig 0.14+（brew install zig），mingw-w64（brew install mingw-w64），
+# build-all.sh — 一键交叉编译 nupac 到 7 个目标平台
+# 依赖：zig 0.14+（brew install zig），
 #       rustup 管理的 Rust
 set -euo pipefail
 cd "$(dirname "$0")"
+
+# ── 参数解析：-jN 指定 cargo 并行度 ──
+CARGO_JOBS=""
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -j[0-9]*) CARGO_JOBS="-j ${1#-j}"; shift ;;
+        -j) CARGO_JOBS="-j $2"; shift 2 ;;
+        -h|--help) echo "usage: ./build-all.sh [-jN]"; exit 0 ;;
+        *) echo "unknown option: $1 (try -jN)"; exit 1 ;;
+    esac
+done
 
 source "$HOME/.cargo/env"
 ZIG_CC="$(pwd)/zig-cc.sh"
@@ -15,7 +26,6 @@ TARGETS=(
     "x86_64-apple-darwin"       # macOS Intel
     "x86_64-unknown-linux-musl" # Linux x86_64（静态链接）
     "aarch64-unknown-linux-musl" # Linux ARM64（静态链接）
-    "x86_64-pc-windows-gnu"     # Windows x86_64（MinGW）
     "x86_64-unknown-freebsd"    # FreeBSD x86_64
     "i686-unknown-freebsd"      # FreeBSD x86
     "x86_64-unknown-netbsd"     # NetBSD x86_64
@@ -42,9 +52,6 @@ rustflags = ["-C", "link-self-contained=yes"]
 [target.aarch64-unknown-linux-musl]
 linker = "rust-lld"
 rustflags = ["-C", "link-self-contained=yes"]
-
-[target.x86_64-pc-windows-gnu]
-linker = "x86_64-w64-mingw32-gcc"
 EOF
 
 # BSD 目标需要 zig cc 作为链接器，且每个目标有独立的 zig-cc wrapper
@@ -84,7 +91,7 @@ for t in "${TARGETS[@]}"; do
     # 非 Apple 目标需要用 zig cc 作为 C 编译器（编译 runtime.c）
     case "$t" in
         aarch64-apple-darwin|x86_64-apple-darwin)
-            cargo build --release --target "$t" 2>&1 | tail -3
+            cargo build --release --target "$t" $CARGO_JOBS 2>&1 | tail -3
             ;;
         x86_64-unknown-freebsd|i686-unknown-freebsd)
             _stubdir="target/bsd-stubs"
@@ -94,14 +101,14 @@ for t in "${TARGETS[@]}"; do
             AR_ENV="AR_$(echo "$t" | tr '[:upper:]-' '[:lower:]_' | sed 's/\./_/g' | tr '-' '_')"
             export "$AR_ENV=$ZIG_AR"
             RUSTFLAGS="-C link-arg=-Wl,--allow-shlib-undefined -C link-arg=-L$(pwd)/$_stubdir" \
-                cargo build --release --target "$t" 2>&1 | tail -3
+                cargo build --release --target "$t" $CARGO_JOBS 2>&1 | tail -3
             ;;
         *)
             CC_ENV="CC_$(echo "$t" | tr '[:upper:]-' '[:lower:]_' | sed 's/\./_/g' | tr '-' '_')"
             export "$CC_ENV=$ZIG_CC"
             AR_ENV="AR_$(echo "$t" | tr '[:upper:]-' '[:lower:]_' | sed 's/\./_/g' | tr '-' '_')"
             export "$AR_ENV=$ZIG_AR"
-            cargo build --release --target "$t" 2>&1 | tail -3
+            cargo build --release --target "$t" $CARGO_JOBS 2>&1 | tail -3
             ;;
     esac
     echo "==> $t done"
@@ -129,7 +136,6 @@ echo ""
 echo "========== Build artifacts =========="
 for t in "${TARGETS[@]}"; do
     case "$t" in
-        x86_64-pc-windows-gnu) bin="target/$t/release/nupac.exe" ;;
         aarch64-apple-darwin)  bin="target/release/nupac" ;;  # 宿主目标
         *) bin="target/$t/release/nupac" ;;
     esac
@@ -152,7 +158,6 @@ pack_name() {
         x86_64-apple-darwin)        echo "nupa-x86_64-apple-darwin" ;;
         x86_64-unknown-linux-musl)  echo "nupa-x86_64-unknown-linux-musl" ;;
         aarch64-unknown-linux-musl) echo "nupa-aarch64-unknown-linux-musl" ;;
-        x86_64-pc-windows-gnu)      echo "nupa-x86_64-pc-windows-gnu" ;;
         x86_64-unknown-freebsd)     echo "nupa-x86_64-unknown-freebsd" ;;
         i686-unknown-freebsd)       echo "nupa-i686-unknown-freebsd" ;;
         x86_64-unknown-netbsd)      echo "nupa-x86_64-unknown-netbsd" ;;
@@ -167,15 +172,13 @@ for t in "${TARGETS[@]}"; do
     exe=0
     case "$t" in
         aarch64-apple-darwin) out="target/release" ;;
-        x86_64-pc-windows-gnu) out="target/$t/release"; exe=1 ;;
         *) out="target/$t/release" ;;
     esac
     staging="target/pack/$name"
     rm -rf "$staging"
     mkdir -p "$staging"
     # 只打包必要内容：二进制 + install.sh + 静态库 + 头文件 + 补全脚本
-    if [ "$exe" = "1" ]; then binname="nupac.exe"; else binname="nupac"; fi
-    cp "$out/$binname" "$staging/$binname"
+    cp "$out/nupac" "$staging/nupac"
     cp "$out/install.sh" "$staging/"
     chmod +x "$staging/install.sh"
     [ -f "$out/libnupa.a" ] && cp "$out/libnupa.a" "$staging/"
@@ -183,15 +186,9 @@ for t in "${TARGETS[@]}"; do
     [ -d "$out/completions" ] && cp -r "$out/completions" "$staging/completions"
     find "$staging" -name ".DS_Store" -delete
 
-    if [ "$exe" = "1" ]; then
-        # Windows → zip
-        arch_path="target/${name}.zip"
-        (cd target/pack && zip -rq "../${name}.zip" "$name")
-    else
-        # Unix → tar.gz
-        arch_path="target/${name}.tar.gz"
-        tar -C target/pack -czf "$arch_path" "$name"
-    fi
+    # Unix → tar.gz
+    arch_path="target/${name}.tar.gz"
+    tar -C target/pack -czf "$arch_path" "$name"
     echo "  $(ls -lh "$arch_path" | awk '{print $5}')  $arch_path"
     rm -rf "$staging"
 done

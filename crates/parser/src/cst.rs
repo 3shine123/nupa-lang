@@ -89,6 +89,7 @@ pub struct CstParam {
     pub name: Option<String>,
     pub external_name: Option<String>,
     pub next: Option<Box<CstParam>>,
+    pub attributes: Vec<String>,
 }
 
 // Expression node

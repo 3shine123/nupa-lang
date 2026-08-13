@@ -44,6 +44,15 @@ impl<'a> Parser<'a> {
                 "uint8_t".into(), "uint16_t".into(), "uint32_t".into(), "uint64_t".into(),
                 "uintptr_t".into(), "intptr_t".into(),
                 "pthread_t".into(), "pthread_mutex_t".into(), "pthread_cond_t".into(),
+                "va_list".into(),
+                // Time / POSIX types (used with clock()/time()/etc.)
+                "clock_t".into(), "time_t".into(), "clockid_t".into(),
+                "off_t".into(), "pid_t".into(), "mode_t".into(),
+                "socklen_t".into(), "useconds_t".into(), "suseconds_t".into(),
+                "ssize_t".into(), "wchar_t".into(), "char16_t".into(), "char32_t".into(),
+                "key_t".into(), "fsblkcnt_t".into(), "fsfilcnt_t".into(), "blkcnt_t".into(),
+                "blksize_t".into(), "dev_t".into(), "id_t".into(), "ino_t".into(),
+                "nlink_t".into(), "uid_t".into(), "gid_t".into(),
             ],
             type_params: Vec::new(),
             macro_names: Vec::new(),
@@ -109,9 +118,25 @@ impl<'a> Parser<'a> {
         false
     }
 
+    /// Contextual property-attribute words (copy/retain/weak/strong/assign/
+    /// nonatomic/getter/setter/readonly/readwrite) are only special inside
+    /// `@property (...)`. Everywhere else they are ordinary identifiers
+    /// (e.g. `int copy = 0;`, `[obj retain]`, a function named `weak`).
+    fn is_contextual_kw_ident(&self) -> bool {
+        self.current.kind == TokenKind::Keyword && matches!(
+            self.current.keyword,
+            KeywordKind::AtCopy | KeywordKind::AtRetain | KeywordKind::AtWeak
+                | KeywordKind::AtStrong | KeywordKind::AtAssign
+                | KeywordKind::AtNonatomic | KeywordKind::AtGetter
+                | KeywordKind::AtSetter | KeywordKind::AtReadonly
+                | KeywordKind::AtReadwrite
+        )
+    }
+
     fn is_name_token(&self) -> bool {
         self.current.kind == TokenKind::Identifier ||
-        (self.current.kind == TokenKind::Keyword && self.current.keyword == KeywordKind::Self_)
+        (self.current.kind == TokenKind::Keyword && self.current.keyword == KeywordKind::Self_) ||
+        self.is_contextual_kw_ident()
     }
 
     fn consume(&mut self, kind: TokenKind, msg: &str) {
@@ -136,8 +161,12 @@ impl<'a> Parser<'a> {
         self.panic_mode = true;
         self.has_error = true;
         self.error_count += 1;
-        self.err_msg = msg.to_string();
-        eprintln!("error:{}:{}: {}", self.previous.line, self.previous.column, msg);
+        let entry = format!("{}:{}: {}", self.previous.line, self.previous.column, msg);
+        if self.err_msg.is_empty() {
+            self.err_msg = entry;
+        } else {
+            self.err_msg = format!("{}\n{}", self.err_msg, entry);
+        }
     }
 
     fn synchronize(&mut self) {
@@ -616,7 +645,8 @@ else if self.match_keyword(KeywordKind::Typeof) {
         if self.current.kind == TokenKind::Keyword {
             let kw = self.current.keyword;
             if kw == KeywordKind::Id || kw == KeywordKind::Class ||
-               kw == KeywordKind::Sel || kw == KeywordKind::Instancetype {
+               kw == KeywordKind::Sel || kw == KeywordKind::Instancetype ||
+               self.is_contextual_kw_ident() {
                 self.advance();
                 let text = self.previous_text().to_string();
                 return Some(CstExpr {
@@ -675,9 +705,9 @@ else if self.match_keyword(KeywordKind::Typeof) {
         if self.match_token(TokenKind::Integer) {
             let text = self.previous_text();
             let val = if text.len() > 2 && (text.starts_with("0x") || text.starts_with("0X")) {
-                i64::from_str_radix(&text[2..], 16).unwrap_or(0)
+                i64::from_str_radix(&text[2..], 16).unwrap_or_else(|_| u64::from_str_radix(&text[2..], 16).unwrap_or(0) as i64)
             } else {
-                text.parse::<i64>().unwrap_or(0)
+                text.parse::<i64>().unwrap_or_else(|_| text.parse::<u64>().unwrap_or(0) as i64)
             };
             return Some(CstExpr {
                 kind: CstExprKind::Integer, expr_type: None,
@@ -695,7 +725,13 @@ else if self.match_keyword(KeywordKind::Typeof) {
             });
         }
         if self.match_token(TokenKind::String) {
-            let text = self.previous_text().to_string();
+            let mut text = self.previous_text().to_string();
+            // Adjacent string literals ("a" "b") are concatenated by the C
+            // preprocessor; support them so multi-line printf formats parse.
+            while self.check(TokenKind::String) {
+                text.push_str(self.current_text());
+                self.advance();
+            }
             return Some(CstExpr {
                 kind: CstExprKind::String, expr_type: None,
                 line: self.previous.line, col: self.previous.column,
@@ -730,6 +766,7 @@ else if self.match_keyword(KeywordKind::Typeof) {
                       KeywordKind::AtOptional | KeywordKind::AtRequired | KeywordKind::AtClass |
                       KeywordKind::AtTry | KeywordKind::AtCatch | KeywordKind::AtFinally |
                       KeywordKind::AtThrow | KeywordKind::AtSynchronized | KeywordKind::AtAutoreleasepool |
+                       KeywordKind::AtNoArc |
                       KeywordKind::AtPublic | KeywordKind::AtPackage | KeywordKind::AtProtected |
                       KeywordKind::AtPrivate | KeywordKind::AtDefs | KeywordKind::AtNamespace |
                       KeywordKind::AtUsing | KeywordKind::Self_ | KeywordKind::Super |
@@ -841,6 +878,22 @@ else if self.match_keyword(KeywordKind::Typeof) {
         }
 
         // Message send [receiver ...]
+        if self.match_token(TokenKind::AtArray) {
+            // @[...] array literal
+            let mut elements = Vec::new();
+            while !self.check(TokenKind::RBracket) && !self.check(TokenKind::Eof) {
+                if let Some(e) = self.parse_assignment() {
+                    elements.push(e);
+                }
+                if !self.match_token(TokenKind::Comma) { break; }
+            }
+            self.consume(TokenKind::RBracket, "expected ']' after array literal");
+            return Some(CstExpr {
+                kind: CstExprKind::ArrayLit, expr_type: None,
+                line: self.previous.line, col: self.previous.column,
+                data: CstExprData::ArrayLit(elements),
+            });
+        }
         if self.match_token(TokenKind::LBracket) {
             // The receiver may be a generic-instantiated type expression like
             // `VectorBuffer<RenderPoint2D*>` in `[[VectorBuffer<RenderPoint2D*> alloc] init]`.
@@ -900,6 +953,7 @@ else if self.match_keyword(KeywordKind::Typeof) {
                       KeywordKind::AtOptional | KeywordKind::AtRequired | KeywordKind::AtClass |
                       KeywordKind::AtTry | KeywordKind::AtCatch | KeywordKind::AtFinally |
                       KeywordKind::AtThrow | KeywordKind::AtSynchronized | KeywordKind::AtAutoreleasepool |
+                       KeywordKind::AtNoArc |
                       KeywordKind::AtPublic | KeywordKind::AtPackage | KeywordKind::AtProtected |
                       KeywordKind::AtPrivate | KeywordKind::AtDefs | KeywordKind::AtNamespace |
                       KeywordKind::AtUsing |
@@ -1006,12 +1060,8 @@ else if self.match_keyword(KeywordKind::Typeof) {
             return self.parse_init_list_or_dict();
         }
 
-        // @{...} dictionary literal — @{ produces LBrace, then { produces LBrace
-        if self.match_token(TokenKind::LBrace) {
-            // Handle the @{ case
-            if self.current.kind == TokenKind::LBrace {
-                self.advance();
-            }
+        // @{...} dictionary literal
+        if self.match_token(TokenKind::AtDict) {
             let mut keys = Vec::new();
             let mut values = Vec::new();
             let mut is_dict = false;
@@ -1097,6 +1147,7 @@ else if self.match_keyword(KeywordKind::Typeof) {
                         par_type: Some(Box::new(ptype)),
                         name: None,
                         external_name: None,
+                    attributes: Vec::new(),
                         next: None,
                     };
                     if self.current.kind == TokenKind::Identifier {
@@ -1224,6 +1275,19 @@ else if self.match_keyword(KeywordKind::Typeof) {
             else if self.match_token(TokenKind::LParen) {
                 let mut args = Vec::new();
                 while !self.check(TokenKind::RParen) && !self.check(TokenKind::Eof) {
+                    // Type arguments for builtins like `__builtin_offsetof(struct Pt, y)`,
+                    // `__builtin_types_compatible_p(int, long)`, `va_arg(ap, int)`.
+                    if self.is_builtin_type_arg_start() {
+                        if let Some(ty) = self.parse_type_full() {
+                            args.push(CstExpr {
+                                kind: CstExprKind::TypeLiteral, expr_type: None,
+                                line: self.previous.line, col: self.previous.column,
+                                data: CstExprData::TypeLiteral(ty),
+                            });
+                            if !self.match_token(TokenKind::Comma) { break; }
+                            continue;
+                        }
+                    }
                     if let Some(a) = self.parse_assignment() {
                         args.push(a);
                     }
@@ -2042,7 +2106,7 @@ else if self.match_keyword(KeywordKind::Typeof) {
             let mut catches = Vec::new();
             while self.match_keyword(KeywordKind::AtCatch) {
                 let mut param = CstParam {
-                    par_type: None, name: None, external_name: None, next: None,
+                    par_type: None, name: None, external_name: None, next: None, attributes: Vec::new(),
                 };
                 if self.match_token(TokenKind::LParen) {
                     param.par_type = self.parse_type_full().map(Box::new);
@@ -2099,6 +2163,16 @@ else if self.match_keyword(KeywordKind::Typeof) {
                 data: CstStmtData::Autoreleasepool(body),
             });
         }
+        if self.match_keyword(KeywordKind::AtNoArc) {
+            let body = self.parse_statement().map(Box::new).unwrap_or_else(||
+                Box::new(CstStmt { kind: CstStmtKind::Compound, line: 0, column: 0, data: CstStmtData::Compound(Vec::new()) })
+            );
+            return Some(CstStmt {
+                kind: CstStmtKind::NoArc,
+                line: self.previous.line, column: self.previous.column,
+                data: CstStmtData::NoArc(body),
+            });
+        }
 
         // Label: identifier : (not ::)
         if self.current.kind == TokenKind::Identifier && self.peek_next() == TokenKind::Colon {
@@ -2125,9 +2199,17 @@ else if self.match_keyword(KeywordKind::Typeof) {
         }
 
         // Declaration
+        let stmt_attrs = if self.current.kind == TokenKind::Identifier &&
+            (self.current_text() == "__attribute__" || self.current_text() == "__attribute") {
+            self.parse_attributes()
+        } else { Vec::new() };
         if self.is_declaration_start() {
             let decl = self.parse_declaration();
-            if let Some(d) = decl {
+            if let Some(mut d) = decl {
+                // Local-variable leading attribute: `__attribute__((unused)) int x;`
+                let mut merged = stmt_attrs;
+                merged.append(&mut d.attributes);
+                d.attributes = merged;
                 return Some(CstStmt {
                     kind: CstStmtKind::Decl,
                     line: d.line, column: d.column,
@@ -2177,15 +2259,41 @@ else if self.match_keyword(KeywordKind::Typeof) {
         } else if self.current.kind == TokenKind::Identifier {
             let tname = self.current_text().to_string();
             // Check if it's a known type name, a type parameter, or a namespace-qualified name
-            self.is_type_name(&tname) || self.is_type_param(&tname) || {
-                // Peek ahead to see if :: follows (namespace-qualified name)
-                let after = self.current.start + self.current.length;
-                let rest = &self.source[after..];
-                rest.trim_start().starts_with("::")
-            }
+            // Also: `IDENT IDENT` (e.g. `clock_t t0 = ...`) is a declaration —
+            // the first identifier is a typedef from an included C header.
+            let after = self.current.start + self.current.length;
+            let rest = &self.source[after..];
+            let trimmed = rest.trim_start();
+            let next = trimmed.chars().next().unwrap_or(';');
+            // Compound assignments like `x *= e`, `x -= e`, `x >>= e` are
+            // expressions, not declarations (`x` is a variable, not a type).
+            let is_compound_assign = trimmed.starts_with("*=") || trimmed.starts_with("/=")
+                || trimmed.starts_with("%=") || trimmed.starts_with("+=")
+                || trimmed.starts_with("-=") || trimmed.starts_with("<<=")
+                || trimmed.starts_with(">>=") || trimmed.starts_with("&=")
+                || trimmed.starts_with("|=") || trimmed.starts_with("^=");
+            self.is_type_name(&tname) || self.is_type_param(&tname)
+                || trimmed.starts_with("::")
+                || (!is_compound_assign && matches!(next, '*' | '_' | 'a'..='z' | 'A'..='Z'))
         } else {
             false
         }
+    }
+
+    /// True when the current token begins a C type *keyword* (not a bare
+    /// identifier type name, which is ambiguous with a variable). Used to parse
+    /// type arguments inside builtin calls like `__builtin_offsetof(struct Pt, y)`,
+    /// `__builtin_types_compatible_p(int, long)`, and `va_arg(ap, int)`.
+    fn is_builtin_type_arg_start(&self) -> bool {
+        if self.current.kind != TokenKind::Keyword { return false; }
+        matches!(self.current.keyword,
+            KeywordKind::Int | KeywordKind::Char | KeywordKind::Float |
+            KeywordKind::Double | KeywordKind::Long | KeywordKind::Short |
+            KeywordKind::Void | KeywordKind::Bool |
+            KeywordKind::Struct | KeywordKind::Union | KeywordKind::Enum |
+            KeywordKind::Signed | KeywordKind::Unsigned |
+            KeywordKind::Const | KeywordKind::Volatile |
+            KeywordKind::Typeof)
     }
 
     // ─── Declaration parsing ────────────────────────────────────────────
@@ -2199,7 +2307,8 @@ else if self.match_keyword(KeywordKind::Typeof) {
         } else if self.current.kind == TokenKind::Keyword {
             let kw = self.current.keyword;
             if kw == KeywordKind::Id || kw == KeywordKind::Class ||
-               kw == KeywordKind::Sel || kw == KeywordKind::Instancetype {
+               kw == KeywordKind::Sel || kw == KeywordKind::Instancetype ||
+               self.is_contextual_kw_ident() {
                 self.advance();
                 name.push_str(self.previous_text());
             } else {
@@ -2229,7 +2338,7 @@ else if self.match_keyword(KeywordKind::Typeof) {
         Some(name)
     }
 
-    fn parse_function_decl_or_definition(&mut self, return_type: CstType, name: String) -> Option<CstDecl> {
+    fn parse_function_decl_or_definition(&mut self, return_type: CstType, name: String, prefix_attrs: Vec<String>) -> Option<CstDecl> {
         let mut params = Vec::new();
         let mut has_variadic = false;
 
@@ -2261,10 +2370,13 @@ else if self.match_keyword(KeywordKind::Typeof) {
                     }
                     n
                 } else { String::new() };
+                // Parameter-level attributes: `int x __attribute__((unused))`
+                let param_attrs = self.parse_attributes();
                 params.push(CstParam {
                     par_type: Some(Box::new(pt)),
                     name: if pname.is_empty() { None } else { Some(pname) },
                     external_name: None,
+                    attributes: param_attrs,
                     next: None,
                 });
             } else {
@@ -2273,6 +2385,10 @@ else if self.match_keyword(KeywordKind::Typeof) {
             if !self.match_token(TokenKind::Comma) { break; }
         }
         self.consume(TokenKind::RParen, "expected ')' after params");
+
+        // Trailing attributes: `int f(int) __attribute__((pure));`
+        let mut trailing_attrs = self.parse_attributes();
+        trailing_attrs.splice(0..0, prefix_attrs);
 
         let body = if self.check(TokenKind::LBrace) {
             self.parse_compound_statement().map(Box::new)
@@ -2299,7 +2415,7 @@ else if self.match_keyword(KeywordKind::Typeof) {
                 has_variadic,
                 body,
             },
-                    attributes: Vec::new(),
+                    attributes: trailing_attrs,
 })
     }
 
@@ -2308,7 +2424,11 @@ else if self.match_keyword(KeywordKind::Typeof) {
         // declaration itself, so they travel through CST/AST to the C output.
         let attrs = self.parse_attributes();
         let mut decl = self.parse_declaration_inner()?;
-        decl.attributes = attrs;
+        // Merge: leading attrs go first, then any mid/trailing attrs collected
+        // by the inner parser (e.g. `void *__attribute__((x)) f(void) __attribute__((y))`).
+        let mut merged = attrs;
+        merged.append(&mut decl.attributes);
+        decl.attributes = merged;
         Some(decl)
     }
 
@@ -2352,7 +2472,16 @@ else if self.match_keyword(KeywordKind::Typeof) {
                     parts.push(cur.trim().to_string());
                     cur.clear();
                 } else {
-                    cur.push_str(self.current_text());
+                    if self.current.kind == TokenKind::String {
+                        // String tokens exclude their quotes (lexer design); an
+                        // attribute like `no_sanitize("address","thread")` needs
+                        // them back or clang rejects it.
+                        cur.push('"');
+                        cur.push_str(self.current_text());
+                        cur.push('"');
+                    } else {
+                        cur.push_str(self.current_text());
+                    }
                     cur.push(' ');
                     self.advance();
                 }
@@ -2403,7 +2532,11 @@ else if self.match_keyword(KeywordKind::Typeof) {
 
         // Typedef
         if self.match_keyword(KeywordKind::Typedef) {
-            return self.parse_typedef();
+            // `typedef __attribute__((aligned(8))) unsigned long w;`
+            let td_attrs = self.parse_attributes();
+            let mut td = self.parse_typedef()?;
+            td.attributes.splice(0..0, td_attrs);
+            return Some(td);
         }
 
         // Struct/union/enum
@@ -2414,6 +2547,8 @@ else if self.match_keyword(KeywordKind::Typeof) {
                 self.advance();
                 if self.check(TokenKind::LBrace) {
                     let fields = self.parse_struct_body(is_union)?;
+                    // Post-body attributes: `struct S { ... } __attribute__((packed));`
+                    let body_attrs = self.parse_attributes();
                     self.consume(TokenKind::Semicolon, "expected ';' after struct");
                     return Some(CstDecl {
                         kind: CstDeclKind::Struct,
@@ -2421,7 +2556,7 @@ else if self.match_keyword(KeywordKind::Typeof) {
                         name: Some(name),
                         next: None,
                         data: CstDeclData::Aggregate { fields, is_union },
-                                            attributes: Vec::new(),
+                                            attributes: body_attrs,
 });
                 }
                 if self.check(TokenKind::Semicolon) {
@@ -2470,7 +2605,7 @@ else if self.match_keyword(KeywordKind::Typeof) {
                 let name = self.parse_qualified_name_with_keywords()?;
                 // Function or variable?
                 if self.check(TokenKind::LParen) {
-                    return self.parse_function_decl_or_definition(struct_type, name);
+                    return self.parse_function_decl_or_definition(struct_type, name, Vec::new());
                 } else {
                     // Variable declaration
                     let mut var = CstDecl {
@@ -2552,6 +2687,8 @@ else if self.match_keyword(KeywordKind::Typeof) {
                 }
             }
             if let Some(fields) = self.parse_struct_body(is_union) {
+                // Post-body attributes: `struct { ... } __attribute__((packed));`
+                let body_attrs = self.parse_attributes();
                 self.consume(TokenKind::Semicolon, "expected ';' after struct");
                 return Some(CstDecl {
                     kind: CstDeclKind::Struct,
@@ -2559,7 +2696,7 @@ else if self.match_keyword(KeywordKind::Typeof) {
                     name: None,
                     next: None,
                     data: CstDeclData::Aggregate { fields, is_union },
-                                    attributes: Vec::new(),
+                                    attributes: body_attrs,
 });
             }
             return None;
@@ -2586,6 +2723,9 @@ else if self.match_keyword(KeywordKind::Typeof) {
                 }
             }
         };
+        // Mid-declaration attributes between return type and name:
+        // `void *__attribute__((warn_unused_result)) f(void);`
+        let mid_attrs = self.parse_attributes();
         let name = if return_type.block_name.is_some() {
             // Block type consumed the name as block_name (e.g., int (^name)(params))
             return_type.block_name.clone().unwrap()
@@ -2595,7 +2735,7 @@ else if self.match_keyword(KeywordKind::Typeof) {
 
         // Function or variable?
         if self.check(TokenKind::LParen) {
-            self.parse_function_decl_or_definition(return_type, name)
+            self.parse_function_decl_or_definition(return_type, name, mid_attrs)
         } else {
             // Variable declaration
             let mut var = CstDecl {
@@ -2612,7 +2752,7 @@ else if self.match_keyword(KeywordKind::Typeof) {
                     is_block_qual: qualifiers.3,
                     is_weak: qualifiers.4,
                 },
-                            attributes: Vec::new(),
+                            attributes: mid_attrs.clone(),
 };
 
             // Array suffix: name[size]
@@ -3214,6 +3354,7 @@ else if self.match_keyword(KeywordKind::Typeof) {
                       KeywordKind::AtOptional | KeywordKind::AtRequired | KeywordKind::AtClass |
                       KeywordKind::AtTry | KeywordKind::AtCatch | KeywordKind::AtFinally |
                       KeywordKind::AtThrow | KeywordKind::AtSynchronized | KeywordKind::AtAutoreleasepool |
+                       KeywordKind::AtNoArc |
                       KeywordKind::AtPublic | KeywordKind::AtPackage | KeywordKind::AtProtected |
                       KeywordKind::AtPrivate | KeywordKind::AtDefs | KeywordKind::AtNamespace |
                       KeywordKind::AtUsing | KeywordKind::Self_ | KeywordKind::Super |
@@ -3589,6 +3730,7 @@ else if self.match_keyword(KeywordKind::Typeof) {
                     par_type: None,
                     name: None,
                     external_name: Some(sel_part),
+                            attributes: Vec::new(),
                     next: None,
                 };
                 // Type name (optional)
@@ -3632,6 +3774,7 @@ else if self.match_keyword(KeywordKind::Typeof) {
                                 par_type: None,
                                 name: None,
                                 external_name: Some(next_part),
+                                attributes: Vec::new(),
                                 next: None,
                             };
                             if self.match_token(TokenKind::LParen) {
@@ -3672,6 +3815,7 @@ else if self.match_keyword(KeywordKind::Typeof) {
                         par_type: Some(Box::new(ptype)),
                         name: if pname.is_empty() { None } else { Some(pname) },
                         external_name: None,
+                    attributes: Vec::new(),
                         next: None,
                     };
                     tail = &mut tail.insert(Box::new(p)).next;

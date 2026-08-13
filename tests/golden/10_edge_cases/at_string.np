@@ -1,8 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #import <Foundation/Foundation.nh>
-#import <Foundation/NPString.nh>
-#import <Foundation/NPString.np>
 
 int main() {
     @autoreleasepool {

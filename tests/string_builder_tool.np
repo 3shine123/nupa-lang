@@ -126,13 +126,13 @@ int main() {
     printf("=== Micrit Tooling Test: String Builder ===\n\n");
 
     // 1. 初始化工具对象
-    NPStringBuilder *sb = [[NPStringBuilder alloc] initWithString:@"BaseURL: https://api.micrit.org"];
-    
+NPStringBuilder *sb = [[NPStringBuilder alloc] initWithString:"BaseURL: https://api.micrit.org"];
+
     // 2. 链式/连续调用工具方法拼装数据
-    [sb appendStr:@"/v1/user/"];
+    [sb appendStr:"/v1/user/"];
     [sb appendInt:8888];
-    [sb appendStr:@"?status="];
-    [sb appendStr:@"active"];
+    [sb appendStr:"?status="];
+    [sb appendStr:"active"];
     
     // 3. 读取属性（点语法转译测试）
     printf("Generated URL Length: %d\n", sb.length);
@@ -142,9 +142,9 @@ int main() {
     
     // 5. 复用工具对象
     [sb clear];
-    [sb appendStr:@"[Log] System status OK. CPU: "];
+    [sb appendStr:"[Log] System status OK. CPU: "];
     [sb appendInt:42];
-    [sb appendStr:@"%"];
+    [sb appendStr:"%"];
     
     PrintParsedToolObject(sb);
 

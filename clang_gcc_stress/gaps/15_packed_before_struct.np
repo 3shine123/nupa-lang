@@ -1,0 +1,10 @@
+#include <stdio.h>
+// 缺口(语义):packed/aligned 写在 struct 前虽然能转译,
+// 但 clang 警告 "attribute ignored, place it after struct" —— packed 不会真正生效。
+// 要想真正生效必须写 `} __attribute__((packed));`(见 01,同样不支持)。
+__attribute__((packed))
+struct P {
+    int a;
+    int b;
+};
+int main(void) { return 0; }

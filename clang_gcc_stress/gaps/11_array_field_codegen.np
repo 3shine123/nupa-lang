@@ -1,0 +1,12 @@
+#include <stdio.h>
+// 缺口(转译 bug):struct 里的数组字段发射成 `char[8] name;`(C 编译报错)。
+// 应为 `char name[8];`。这是 codegen 问题,不是解析器问题。
+struct R {
+    char name[8];
+    int score;
+};
+int main(void) {
+    struct R r = { "hi", 9 };
+    printf("%s %d\n", r.name, r.score);
+    return 0;
+}

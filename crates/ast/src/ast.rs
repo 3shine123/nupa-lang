@@ -1,4 +1,4 @@
-use nupa_cst::{CstParam, TypePrim};
+use nupa_cst::{CstParam, CstType, TypePrim};
 
 // ─── Type node ───────────────────────────────────────────────────────────────
 
@@ -40,6 +40,42 @@ impl AstType {
             array_size_name: None,
         }
     }
+
+    /// Convert a CST type into an AST type, resolving the class reference for
+    /// pointer-to-named-class types (`Foo *`).
+    pub fn from_cst_type(ct: &CstType) -> AstType {
+        let mut t = AstType::new(ct.prim);
+        t.is_pointer = ct.is_pointer;
+        t.is_const = ct.is_const;
+        t.is_unsigned = ct.is_unsigned;
+        t.is_struct = ct.is_struct;
+        t.is_block = ct.is_block;
+        t.is_fn_ptr = ct.is_fn_ptr;
+        t.block_name = ct.block_name.clone();
+        t.block_params = ct.block_params.as_ref().map(|bp| Box::new(AstType::from_cst_type(bp)));
+        if let Some(ref name) = ct.name {
+            t.name = Some(name.clone());
+            t.class_ref = Some(name.clone());
+        }
+        if ct.is_pointer {
+            if let Some(ref sub) = ct.subtype {
+                if let Some(ref sname) = sub.name {
+                    t.name = Some(sname.clone());
+                    t.class_ref = Some(sname.clone());
+                }
+                t.prim = sub.prim;
+            }
+        }
+        t
+    }
+
+    /// True if this type is a pointer-to-object, `id`, `instancetype`, or `Class`.
+    pub fn is_object(&self) -> bool {
+        self.is_pointer
+            || self.prim == TypePrim::Id
+            || self.prim == TypePrim::Instancetype
+            || self.prim == TypePrim::Class
+    }
 }
 
 // ─── Expression kinds ────────────────────────────────────────────────────────
@@ -51,8 +87,8 @@ pub enum AstExprKind {
     VarRef, IvarRef, PropRef,
     MsgSend, FuncCall,
     Unary, Binary, Assign, Cast,
-    BlockLit, ArrayLit, DictLit,
-    Subscript, Comma, Sizeof, Alignof, Ternary,
+    BlockLit, ArrayLit, InitList, DictLit,
+    Subscript, Comma, Sizeof, Alignof, Ternary, TypeLiteral,
 }
 
 #[derive(Debug, Clone)]
@@ -96,6 +132,7 @@ pub enum AstExprData {
     Assign { target: Box<AstExpr>, value: Box<AstExpr> },
     Cast { target_type: AstType, expr: Box<AstExpr> },
     ArrayLit(Vec<AstExpr>),
+    InitList(Vec<AstExpr>),
     DictLit { keys: Vec<AstExpr>, values: Vec<AstExpr> },
     Comma(Vec<AstExpr>),
     Subscript { object: Box<AstExpr>, key: Box<AstExpr> },
@@ -104,6 +141,7 @@ pub enum AstExprData {
     Block { params: Vec<(AstType, String)>, return_type: Option<Box<AstType>>, body: Option<Box<AstStmt>> },
     Ternary { cond: Box<AstExpr>, then: Box<AstExpr>, else_: Box<AstExpr> },
     Selector(String),
+    TypeLiteral(AstType),
 }
 
 // ─── Statement kinds ─────────────────────────────────────────────────────────
@@ -114,7 +152,7 @@ pub enum AstStmtKind {
     While, Do, For, ForIn,
     Break, Continue, Return, Goto, Label,
     Throw, Try, Catch, Finally,
-    Synchronized, Autoreleasepool, Decl, Asm,
+    Synchronized, Autoreleasepool, NoArc, Decl, Asm,
 }
 
 #[derive(Debug, Clone)]
@@ -146,6 +184,7 @@ pub enum AstStmtData {
     Finally(Box<AstStmt>),
     Synchronized { lock: Box<AstExpr>, body: Box<AstStmt> },
     Autoreleasepool(Box<AstStmt>),
+    NoArc(Box<AstStmt>),
     Asm {
         is_volatile: bool,
         is_goto: bool,
@@ -172,6 +211,7 @@ pub enum AstDeclKind {
     Class, Method, Ivar, Property,
     Function, Variable, Protocol,
     Typedef, Struct, Union, Enum, Namespace, Asm,
+    ForwardClass,
 }
 
 #[derive(Debug, Clone)]
@@ -226,6 +266,7 @@ Ivar {
         return_type: Option<Box<AstType>>,
         params: Option<Box<CstParam>>,
         body: Option<Box<AstStmt>>,
+        has_variadic: bool,
     },
     Variable {
         var_type: Option<Box<AstType>>,
@@ -249,6 +290,9 @@ Ivar {
         values: Vec<AstExpr>,
     },
     Namespace(Vec<AstDecl>),
+    ForwardClass {
+        names: Vec<String>,
+    },
     Asm {
         is_volatile: bool,
         is_goto: bool,

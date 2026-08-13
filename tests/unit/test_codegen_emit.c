@@ -19,7 +19,7 @@ static char *emit_to_str(cg_unit_t *unit) {
 }
 
 static cg_unit_t *make_unit(void) {
-    return cg_unit_alloc("test.nupa");
+    return cg_unit_alloc("test.np");
 }
 
 static void test_emit_empty(void) {

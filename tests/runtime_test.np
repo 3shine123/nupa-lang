@@ -1,4 +1,4 @@
-// NPRuntimeTest.nh -> 专为测试终极 @ 关键字与运行时异常编写的测试文件
+// NPRuntimeTest.h -> 专为测试终极 @ 关键字与运行时异常编写的测试文件
 // 基于 NPFoundation 框架的 Objective-C 风格黑魔法级测试
 
 #import <Foundation/Foundation.nh>
@@ -153,8 +153,8 @@
         
         if (tokens == NULL || strlen(tokens) == 0) {
             // 模拟抛出异常对象
-            NPException* ex = [[NPException alloc] initWithName:@"NPJsonParseException" 
-                                                         reason:@"Token 序列为空，无法解析结构"];
+            NPException* ex = [[NPException alloc] initWithName:"NPJsonParseException" 
+                                                         reason:"Token 序列为空，无法解析结构"];
             @throw ex; 
         }
         
@@ -163,8 +163,8 @@
             printf("[解析器断言] 目标是一个字符串类簇节点，安全转换值: %s\n", [node asString]);
         } else {
             // 类型不匹配，故意引发类型不匹配异常
-            NPException* ex = [[NPException alloc] initWithName:@"NPMismatchTypeException" 
-                                                         reason:@"预期需要 String 类型节点，但收到了不匹配的节点签名"];
+            NPException* ex = [[NPException alloc] initWithName:"NPMismatchTypeException" 
+                                                         reason:"预期需要 String 类型节点，但收到了不匹配的节点签名"];
             @throw ex;
         }
     }
@@ -201,7 +201,7 @@ int main(int argc, const char* argv[])
 
         // 2. 利用类簇创建节点
         printf("--- 测试点 1: 类簇动态工厂创建 ---\n");
-        NPJsonNode* strNode = [NPJsonNode nodeWithSerializableObject:"2026-Spaceship"];
+        NPJsonNode* strNode = [NPJsonNode nodeWithSerializableObject:(id)"2026-Spaceship"];
         NPJsonNode* numNode = [[NPJsonNumberNode alloc] initWithInteger:888]; // 直接实例化子类
 
         // 3. 测试正常流（预期成功）

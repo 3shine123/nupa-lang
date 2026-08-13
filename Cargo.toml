@@ -14,6 +14,7 @@ members = [
     "crates/layout",
     "crates/ownership",
     "crates/arc",
+    "crates/trace",
     "crates/codegen",
     "crates/preprocessor",
     "crates/attrs",

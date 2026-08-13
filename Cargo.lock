@@ -229,6 +229,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "nupa-trace"
+version = "0.1.0"
+dependencies = [
+ "nupa-ast",
+ "nupa-cst",
+ "nupa-ownership",
+]
+
+[[package]]
 name = "nupac"
 version = "0.1.0"
 dependencies = [
@@ -247,6 +256,7 @@ dependencies = [
  "nupa-parser",
  "nupa-preprocessor",
  "nupa-symbol",
+ "nupa-trace",
 ]
 
 [[package]]

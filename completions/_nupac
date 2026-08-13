@@ -1,71 +1,38 @@
 #compdef nupac
 
-autoload -U is-at-least
-
 _nupac() {
-    typeset -A opt_args
-    typeset -a _arguments_options
-    local ret=1
-
-    if is-at-least 5.2; then
-        _arguments_options=(-s -S -C)
-    else
-        _arguments_options=(-s -C)
+    if [[ $CURRENT -eq 2 ]]; then
+        if [[ $PREFIX == -* ]]; then
+            _arguments \
+                '-Werror[promote warnings to errors]' \
+                '-emit-bridge-header[emit a C bridge header for calling Nupa from C]' \
+                '-rewrite-nupa[transpile to C only (no link)]' \
+                '-v[show verbose transpilation info]' \
+                '--verbose[show verbose transpilation info]' \
+                '--version[print version and exit]' \
+                '-fnupa-arc[enable ARC (default)]' \
+                '-fno-nupa-arc[disable ARC (MRC)]' \
+                '-fno-checker[skip type checking]' \
+                '-fno-libc[bare-metal/freestanding output]' \
+                '-trace-refcount[print a static reference-count trace (no codegen)]' \
+                '-trace-max-iters[loop iterations in the refcount trace (default 2)]' \
+                '-trace-no-color[disable colors in the refcount trace]' \
+                '-backend[C compiler backend (portable, clang, gcc)]' \
+                '-o[output path (binary or .c)]' \
+                '-I[add include dir]' \
+                '-L[add lib dir]' \
+                '-S[link a real assembly file (repeatable)]' \
+                '-asm[link a real assembly file (repeatable)]' \
+                '-arch[target arch]'
+        else
+            _values 'nupac command' 'run'
+            _files
+        fi
+        return
     fi
-
-    local context curcontext="$curcontext" state line
-    _arguments "${_arguments_options[@]}" : \
-'-rewrite-nupa=[transpile to C only (no link)]: :_default' \
-'-v+[show verbose transpilation info]: :_default' \
-'--verbose=[show verbose transpilation info]: :_default' \
-'--version=[print version and exit]: :_default' \
-'-fnupa-arc=[enable ARC (default)]: :_default' \
-'-fno-nupa-arc=[disable ARC (MRC)]: :_default' \
-'-fno-checker=[skip type checking]: :_default' \
-'-fno-libc=[bare-metal/freestanding output]: :_default' \
-'-o+[output path (binary or .c)]:PATH:_default' \
-'*-I+[add include dir]:DIR:_default' \
-'*-L+[add lib dir]:DIR:_default' \
-'*-S+[link a real assembly file (repeatable)]:FILE:_default' \
-'*-asm=[link a real assembly file (repeatable)]:FILE:_default' \
-'-arch=[target arch (e.g. -arch x86_64)]:TARGET:_default' \
-'--gen-completions=[generate shell completion script (bash|zsh|fish|powershell|elvish)]:SHELL:_default' \
-'::input -- input .np file:_default' \
-":: :_nupac_commands" \
-"*::: :->nupac" \
-&& ret=0
-    case $state in
-    (nupac)
-        words=($line[2] "${words[@]}")
-        (( CURRENT += 1 ))
-        curcontext="${curcontext%:*:*}:nupac-command-$line[2]:"
-        case $line[2] in
-            (run)
-_arguments "${_arguments_options[@]}" : \
-':input:_default' \
-'*::args:_default' \
-&& ret=0
-;;
-        esac
-    ;;
-esac
+    if [[ ${words[2]} == "run" ]]; then
+        _files
+        return
+    fi
+    _files
 }
-
-(( $+functions[_nupac_commands] )) ||
-_nupac_commands() {
-    local commands; commands=(
-'run:compile + run, then delete binary' \
-    )
-    _describe -t commands 'nupac commands' commands "$@"
-}
-(( $+functions[_nupac__subcmd__run_commands] )) ||
-_nupac__subcmd__run_commands() {
-    local commands; commands=()
-    _describe -t commands 'nupac run commands' commands "$@"
-}
-
-if [ "$funcstack[1]" = "_nupac" ]; then
-    _nupac "$@"
-else
-    compdef _nupac nupac
-fi

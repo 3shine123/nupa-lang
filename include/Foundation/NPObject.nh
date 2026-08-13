@@ -12,6 +12,7 @@ struct NPClass;
 - (void)release;
 - (id)retain;
 - (BOOL)isKindOf:(Class)cls;
+- (id)description;
 @end
 
 @interface NPObject : nupa_root

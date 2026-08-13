@@ -150,13 +150,13 @@ int main(int argc, const char* argv[])
         printf(">>> 开始 NPFoundation 工具类测试 <<<\n");
 
         // 1. 初始化工具管理类
-        NPDataCollector* collector = [[NPDataCollector alloc] initWithClassName:@"宇宙航天一班"];
+        NPDataCollector* collector = [[NPDataCollector alloc] initWithClassName:"宇宙航天一班"];
 
         // 2. 创建测试数据
-        NPStudent* s1 = [[NPStudent alloc] initWithName:@"艾伦" studentId:1001 score:95];
-        NPStudent* s2 = [[NPStudent alloc] initWithName:@"三笠" studentId:1002 score:98];
-        NPStudent* s3 = [[NPStudent alloc] initWithName:@"阿尔敏" studentId:1003 score:92];
-        NPStudent* s4 = [[NPStudent alloc] initWithName:@"利威尔" studentId:1004 score:100];
+        NPStudent* s1 = [[NPStudent alloc] initWithName:"艾伦" studentId:1001 score:95];
+        NPStudent* s2 = [[NPStudent alloc] initWithName:"三笠" studentId:1002 score:98];
+        NPStudent* s3 = [[NPStudent alloc] initWithName:"阿尔敏" studentId:1003 score:92];
+        NPStudent* s4 = [[NPStudent alloc] initWithName:"利威尔" studentId:1004 score:100];
 
         // 3. 将数据组装进工具类
         [collector addStudent:s1];

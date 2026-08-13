@@ -4,9 +4,7 @@
 #include <unistd.h>
 #include <ncurses.h>
 #import <Foundation/Foundation.nh>
-#import <Foundation/NPString.nh>
-#import <Foundation/NPString.np>
-#import <Terminal/Ncurses.nh>
+#import <Terminal/Ncurses.h>
 #import <Terminal/Ncurses.np>
 
 /* C helpers from sysinfo.c */

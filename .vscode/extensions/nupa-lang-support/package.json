@@ -29,7 +29,7 @@
     "grammars": [
       {
         "language": "nupa",
-        "scopeName": "source.nupa",
+        "scopeName": "source.np",
         "path": "./syntaxes/nupa.tmLanguage.json"
       }
     ]

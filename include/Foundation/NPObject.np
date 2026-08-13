@@ -16,6 +16,9 @@
 - (BOOL)isKindOf:(Class)cls {
     return nupa_isKindOf(self, cls);
 }
+- (id)description {
+    return nil;
+}
 @end
 
 @implementation NPObject
@@ -37,5 +40,8 @@
 }
 - (id)retain {
     return nupa_retain(self);
+}
+- (id)description {
+    return nil;
 }
 @end

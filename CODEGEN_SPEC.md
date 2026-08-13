@@ -15,11 +15,11 @@
    |---|---|---|---|---|
    | `clang`（默认） | `^` 语法透传 | 全透传 | `__attribute__((cleanup))` | clang 编译器 |
    | `gcc` | nupac 展开为 struct+函数 | 全透传 | `__attribute__((cleanup))` | gcc 编译器 |
-   | `portable` | 编译时报错 | 仅 Common 集 | 退化为 `__unsafe_unretained` | 任何 C99 编译器 |
+   | `portable` | 展开（同 gcc，gcc∩clang 交集内） | 仅 Common 集 | 退化为 `__unsafe_unretained` | gcc 与 clang 都能编译的 C |
 
-3. **所有后端的行为必须一致**。无论是 clang 的 `^block` 透传还是 gcc 的展开，Block 的语义（捕获、调用、`__block` 变量）完全相同。
+3. **所有后端的行为必须一致**。无论是 clang 的 `^block` 透传还是 gcc/portable 的 struct 展开，Block 的语义（捕获、调用、`__block` 变量）完全相同。
 
-4. **C99 标准兼容（portable 模式）**：所有生成代码必须能通过 `clang -std=c99 -pedantic -Werror`，不使用任何编译器扩展。
+4. **portable 模式 = gcc 与 clang 的语法交集**：生成代码必须能同时通过 `clang -std=c99 -pedantic -Werror` 和 `gcc -std=c99 -pedantic -Werror`，不使用两个前台中任一不认识的结构。Block 的 struct+invoke 展开只采用 struct、函数指针、静态函数等交集内的标准 C 构造，因此 portable 与 gcc 共用同一套展开逻辑，**不在 portable 模式下对 Block 报错**（若某插入代码依赖 clang/gcc 专属扩展，则不受此约束）。
 
 ---
 
@@ -67,10 +67,10 @@
 
 ### 3.3 函数指针与 Block 类型
 
-| 源码 | `--backend=clang` | `--backend=gcc` |
-|---|---|---|
-| `int (^)(int)` | `int (^)(int)` | `int (*)(struct __nupa_block_layout_N *, int)` |
-| `void (^)(NPString *)` | `void (^)(NPString *)` | `void (*)(struct __nupa_block_layout_N *, NPString *)` |
+| 源码 | `--backend=clang` | `--backend=gcc` / `--backend=portable` |
+   |---|---|---|
+   | `int (^)(int)` | `int (^)(int)` | `int (*)(struct __nupa_block_layout_N *, int)` |
+   | `void (^)(NPString *)` | `void (^)(NPString *)` | `void (*)(struct __nupa_block_layout_N *, NPString *)` |
 
 ---
 
@@ -227,9 +227,9 @@ struct __nupa_byref_counter counter = {
 };
 ```
 
-### 8.2 `--backend=gcc` 模式（nupac 展开）
+### 8.2 `--backend=gcc` / `--backend=portable` 模式（nupac 展开）
 
-Block 字面量**必须**展开为静态函数 + 栈上结构体。展开后的语义必须与 clang 的 `-fblocks` 完全一致，包括：
+Block 字面量**必须**展开为静态函数 + 栈上结构体，展开形式只采用 struct、函数指针、静态函数等 gcc∩clang 交集内的构造。展开后的语义必须与 clang 的 `-fblocks` 完全一致，包括：
 
 - `__block` 变量的捕获与修改
 - Block 的调用语法
@@ -341,7 +341,9 @@ struct __nupa_block_layout_N __nupa_blk_N = {
 
 ### 8.3 `--backend=portable` 模式
 
-Block 字面量**编译时报错**，提示用户使用 `--backend=clang` 或 `--backend=gcc`。
+Block 字面量**与 gcc 后端共用同一套 struct+invoke 展开**（见 §8.2）——展开形式只使用 struct、函数指针、静态函数等 gcc∩clang 交集内的标准 C 构造，因此可同时通过 `clang -std=c99 -pedantic` 与 `gcc -std=c99 -pedantic`。
+
+⚠️ 例外：若 Block 体或捕获中使用了 clang/gcc 专属扩展（如 `__attribute__` 的专有项），则按 §1 的 `__attribute__` 后端规则处理（portable 只允许 Common 集），不因 Block 本身报错。
 
 ---
 
@@ -405,7 +407,7 @@ Block 字面量**编译时报错**，提示用户使用 `--backend=clang` 或 `-
 | 9 | `nupa_release` 直接 `free(obj)` 而不调用 `dealloc` | 导致 ivar 内存泄漏 |
 | 10 | `@autoreleasepool` 生成空壳 push/pop 而不管理对象 | 对象永不释放 |
 | 11 | `.nh` 头文件中包含 `@implementation` | 多重导入导致链接期符号重复定义 |
-| 12 | `--backend=portable` 模式下发出 Block 字面量 | 违反 C99 标准，应报错并提示用户 |
+| 12 | `--backend=portable` 模式下发出 `^` Block 字面量 | `^` 是 clang 专属语法（`-fblocks`），portable 必须展开为 struct 形式 |
 | 13 | gcc 后端发出 `^` block 语法 | GCC 不支持 `-fblocks`，必须展开为 struct |
 | 14 | clang 后端展开 Block 为 struct | 浪费性能，clang 自己的 `-fblocks` 已经处理了 |
 
@@ -438,7 +440,8 @@ gcc -std=c99 -Werror <output.c>
 
 ```
 clang -std=c99 -pedantic -Werror <output.c>
+gcc -std=c99 -pedantic -Werror <output.c>
 ```
 
-1. 不含 Block 的测试文件全部通过
-2. 含 Block 的测试文件必须报错 "blocks not supported in portable mode"
+1. 含 Block 的测试文件：Block 展开为 struct 模式，**必须同时通过 clang 与 gcc 的 `-std=c99 -pedantic -Werror`**（验证展开形式在 gcc∩clang 交集内）。
+2. 不含 Block 的测试文件全部通过。

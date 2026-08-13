@@ -1,0 +1,37 @@
+#ifndef NPMUTABLEARRAY_NH
+#define NPMUTABLEARRAY_NH
+
+#import <Foundation/NPArray.nh>
+
+// Mutable counterpart of NPArray. Inherits NPArray's storage ivars
+// (_items / _count / _capacity) and the immutable querying API
+// (count / objectAtIndex: / firstObject / lastObject / containsObject: / ...).
+@interface NPMutableArray : NPArray {
+@public
+    // ivars inherited from NPArray
+}
+
++ (NPMutableArray *)arrayWithCapacity:(size_t)capacity;
++ (NPMutableArray *)array;
++ (NPMutableArray *)arrayWithObject:(id)obj;
++ (NPMutableArray *)arrayWithObjects:(id *)objs count:(size_t)n;
+
+- (NPMutableArray *)init;
+- (NPMutableArray *)initWithCapacity:(size_t)capacity;
+- (NPMutableArray *)initWithArray:(NPArray *)other;
+- (NPMutableArray *)initWithObjects:(id *)objs count:(size_t)n;
+
+- (void)addObject:(id)obj;
+- (void)addObjectsFromArray:(NPArray *)other;
+- (void)insertObject:(id)obj atIndex:(size_t)index;
+- (void)removeObjectAtIndex:(size_t)index;
+- (void)removeLastObject;
+- (void)removeObject:(id)obj;
+- (void)removeAllObjects;
+- (void)replaceObjectAtIndex:(size_t)index withObject:(id)obj;
+- (void)exchangeObjectAtIndex:(size_t)a withObjectAtIndex:(size_t)b;
+- (void)setObject:(id)obj atIndex:(size_t)index;
+
+@end
+
+#endif

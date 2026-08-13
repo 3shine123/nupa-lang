@@ -1,0 +1,6 @@
+#include <stdio.h>
+// 缺口(转译 bug):__attribute__ 里的字符串参数丢引号并塞空格,
+// `no_sanitize("address","thread")` → `no_sanitize (address , thread )`(C 编译报错)。
+__attribute__((no_sanitize("address", "thread")))
+int unsafe_api(int v) { return v + 1; }
+int main(void) { unsafe_api(1); return 0; }

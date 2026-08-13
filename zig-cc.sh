@@ -12,7 +12,6 @@ for a in "$@"; do
             case "$t" in
                 x86_64-unknown-linux-musl)  ZIG_TARGET="x86_64-linux-musl" ;;
                 aarch64-unknown-linux-musl) ZIG_TARGET="aarch64-linux-musl" ;;
-                x86_64-pc-windows-gnu)      ZIG_TARGET="x86_64-windows-gnu" ;;
                 aarch64-apple-darwin)       ZIG_TARGET="aarch64-macos" ;;
                 x86_64-apple-darwin)        ZIG_TARGET="x86_64-macos" ;;
                 x86_64-unknown-freebsd)     ZIG_TARGET="x86_64-freebsd-none" ;;

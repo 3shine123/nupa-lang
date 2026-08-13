@@ -10,7 +10,9 @@ _nupac() {
     cmd=""
     opts=""
 
-    for i in "${COMP_WORDS[@]:0:COMP_CWORD}"
+    # Include the current word so `nupac run<Tab>` (no trailing space) is
+    # detected as the `run` subcommand rather than re-offering "run".
+    for i in "${COMP_WORDS[@]:0:COMP_CWORD+1}"
     do
         case "${cmd},${i}" in
             ",$1")
@@ -26,7 +28,7 @@ _nupac() {
 
     case "${cmd}" in
         nupac)
-            opts="-v -o -I -L -S -rewrite-nupa --verbose --version -fnupa-arc -fno-nupa-arc -fno-checker -fno-libc -asm -arch --gen-completions run"
+            opts="-v -o -I -L -S -Werror -emit-bridge-header -rewrite-nupa --verbose --version -fnupa-arc -fno-nupa-arc -fno-checker -fno-libc -trace-refcount -trace-max-iters -trace-no-color -backend -asm -arch --gen-completions run"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 1 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -61,6 +63,22 @@ _nupac() {
                     return 0
                     ;;
                 -fno-libc)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -trace-refcount)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -trace-max-iters)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -trace-no-color)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -backend)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -101,13 +119,18 @@ _nupac() {
             ;;
         nupac__subcmd__run)
             opts=""
-            if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
+            if [[ ${cur} == -* ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
+            # If the cursor is still on the word "run" (no trailing space),
+            # treat it as already consumed and show all files.
+            local file_cur="${cur}"
+            if [[ "${file_cur}" == "run" ]]; then file_cur=""; fi
             case "${prev}" in
                 *)
-                    COMPREPLY=()
+                    COMPREPLY=($(compgen -f "${file_cur}"))
+                    return 0
                     ;;
             esac
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )

@@ -1,0 +1,6 @@
+#include <stdio.h>
+// 缺口(转译 bug):可变参数 `...` 在生成的 C 里被丢弃。
+// 定义 `int sum(int n, ...)` → 输出 `int sum(int n)`;
+// 多参调用 `sum(3, 10, 20, 30)` 因此 C 编译报 "too many arguments"。
+static int sum(int n, ...) { return n; }
+int main(void) { printf("%d\n", sum(3, 10, 20, 30)); return 0; }

@@ -26,6 +26,7 @@ const KW_TABLE: &[(&str, KeywordKind)] = &[
     ("@defs", KeywordKind::AtDefs),
     ("@namespace", KeywordKind::AtNamespace),
     ("@using", KeywordKind::AtUsing),
+    ("@noarc", KeywordKind::AtNoArc),
     ("readwrite", KeywordKind::AtReadwrite),
     ("readonly", KeywordKind::AtReadonly),
     ("weak", KeywordKind::AtWeak),
@@ -338,22 +339,24 @@ impl<'a> Lexer<'a> {
                     return self.read_at_string(start + 1);
                 }
                 Some(b'[') => {
+                    self.advance(); // consume [
                     return Token {
-                        kind: TokenKind::LBracket,
+                        kind: TokenKind::AtArray,
                         keyword: KeywordKind::None,
                         start,
-                        length: 1,
+                        length: 2,
                         line,
                         column: col,
                         char_val: 0,
                     };
                 }
                 Some(b'{') => {
+                    self.advance(); // consume {
                     return Token {
-                        kind: TokenKind::LBrace,
+                        kind: TokenKind::AtDict,
                         keyword: KeywordKind::None,
                         start,
-                        length: 1,
+                        length: 2,
                         line,
                         column: col,
                         char_val: 0,
@@ -481,8 +484,15 @@ impl<'a> Lexer<'a> {
                 while self.peek().map_or(false, |n| n.is_ascii_hexdigit()) {
                     self.advance();
                 }
+                let mut suf = 0;
+                while let Some(n) = self.peek() {
+                    match n {
+                        b'u' | b'U' | b'l' | b'L' => { self.advance(); suf += 1; }
+                        _ => break,
+                    }
+                }
                 let end = self.pos;
-                return self.make_token(TokenKind::Integer, start, end - start, KeywordKind::None);
+                return self.make_token(TokenKind::Integer, start, end - start - suf, KeywordKind::None);
             }
 
             if c == b'.' {
@@ -506,9 +516,15 @@ impl<'a> Lexer<'a> {
                         }
                     }
                     Some(b'u') | Some(b'U') | Some(b'l') | Some(b'L') => {
-                        self.advance();
+                        let mut suf = 0;
+                        while let Some(n) = self.peek() {
+                            match n {
+                                b'u' | b'U' | b'l' | b'L' => { self.advance(); suf += 1; }
+                                _ => break,
+                            }
+                        }
                         let end = self.pos;
-                        return self.make_token(TokenKind::Integer, start, end - start - 1, KeywordKind::None);
+                        return self.make_token(TokenKind::Integer, start, end - start - suf, KeywordKind::None);
                     }
                     Some(b'f') | Some(b'F') => {
                         is_float = true;
@@ -798,16 +814,14 @@ mod tests {
 
     #[test]
     fn test_at_array_dict_num() {
-        // @[ @{ @( each produce 2 tokens: the @-prefix and the bracket
+        // @[ → AtArray, @{ → AtDict, @( → LParen (stripped)
         let mut l = Lexer::new("@[ @{ @(");
         let t = l.next_token();
-        assert_eq!(t.kind, TokenKind::LBracket);
-        assert_eq!(t.text("@[ @{ @("), "@");
-        assert_eq!(l.next_token().kind, TokenKind::LBracket);
+        assert_eq!(t.kind, TokenKind::AtArray);
+        assert_eq!(t.text("@[ @{ @("), "@[");
         let t = l.next_token();
-        assert_eq!(t.kind, TokenKind::LBrace);
-        assert_eq!(t.text("@[ @{ @("), "@");
-        assert_eq!(l.next_token().kind, TokenKind::LBrace);
+        assert_eq!(t.kind, TokenKind::AtDict);
+        assert_eq!(t.text("@[ @{ @("), "@{");
         let t = l.next_token();
         assert_eq!(t.kind, TokenKind::LParen);
         assert_eq!(t.text("@[ @{ @("), "@");

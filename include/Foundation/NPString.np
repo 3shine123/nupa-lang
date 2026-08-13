@@ -47,11 +47,15 @@
 }
 
 + (NPString *)stringWithUTF8String:(const char *)cstr {
-    return [[[self alloc] initWithUTF8String:cstr] autorelease];
+    @noarc {
+        return [[[self alloc] initWithUTF8String:cstr] autorelease];
+    }
 }
 
 + (NPString *)stringWithString:(NPString *)str {
-    return [[[self alloc] initWithString:str] autorelease];
+    @noarc {
+        return [[[self alloc] initWithString:str] autorelease];
+    }
 }
 
 - (size_t)length {
@@ -147,7 +151,7 @@
 }
 
 - (NPString *)stringByAppendingString:(NPString *)other {
-    if (!other) return [self copy];
+    if (!other) return [NPString stringWithString:self];
     const char *s1 = [self UTF8String];
     const char *s2 = [other UTF8String];
     size_t len1 = strlen(s1);
@@ -161,7 +165,7 @@
 }
 
 - (NPString *)stringByAppendingUTF8String:(const char *)cstr {
-    if (!cstr) return [self copy];
+    if (!cstr) return [NPString stringWithString:self];
     const char *s1 = [self UTF8String];
     size_t len1 = strlen(s1);
     size_t len2 = strlen(cstr);
@@ -210,11 +214,12 @@
 }
 
 - (NPString *)description {
-    return [self copy];
+    return [NPString stringWithString:self];
 }
 
+// `-copy` honors the ObjC convention: the caller owns the result (+1).
 - (NPString *)copy {
-    return [NPString stringWithString:self];
+    return [[NPString alloc] initWithString:self];
 }
 
 @end

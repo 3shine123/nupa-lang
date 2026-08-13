@@ -113,7 +113,7 @@ int main() {
         {
             NPObject *__nupa_tmp_0 = (NPObject_alloc(&nupa_Player_class, __nupa_sel_alloc));
             Player * p = ((struct nupa_Player_vtable *)__nupa_tmp_0->isa->vtable)->initWithLevel_(__nupa_tmp_0, __nupa_sel_initWithLevel_, 10);
-            NPLog("player: %@", p);
+            NPLog((NPString *)nupa_stringFromCstr("player: %s"), p ? [[p description] UTF8String] : "(null)");
             printf("level: %d\n", ((struct Player *)(p))->level);
             nupa_release(p);
         }

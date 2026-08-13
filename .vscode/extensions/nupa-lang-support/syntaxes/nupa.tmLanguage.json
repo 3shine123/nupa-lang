@@ -1,6 +1,6 @@
 {
   "name": "Nupa",
-  "scopeName": "source.nupa",
+  "scopeName": "source.np",
   "fileTypes": ["np"],
   "patterns": [
     { "include": "#comments" },
@@ -16,6 +16,7 @@
     { "include": "#objc-at-class-protocol" },
     { "include": "#objc-at-access-control" },
     { "include": "#objc-at-exception" },
+    { "include": "#nupa-noarc" },
     { "include": "#objc-at-synchronized" },
     { "include": "#objc-at-autoreleasepool" },
     { "include": "#objc-at-protocol-spec" },
@@ -33,6 +34,7 @@
     { "include": "#c-storage-struct-enum" },
     { "include": "#c-typedef" },
     { "include": "#c-storage-modifiers" },
+    { "include": "#c-gcc-keywords" },
     { "include": "#c-control" },
     { "include": "#c-operators" },
     { "include": "#block-syntax" },
@@ -44,11 +46,11 @@
     "comments": {
       "patterns": [
         {
-          "name": "comment.line.double-slash.nupa",
+          "name": "comment.line.double-slash.np",
           "match": "//.*$"
         },
         {
-          "name": "comment.block.nupa",
+          "name": "comment.block.np",
           "begin": "/\\*",
           "end": "\\*/"
         }
@@ -57,7 +59,7 @@
     "preprocessor": {
       "patterns": [
         {
-          "name": "meta.preprocessor.include.nupa",
+          "name": "meta.preprocessor.include.np",
           "match": "^\\s*(#\\s*(?:import|include))\\s+[<\"]([^>\"]*)[>\"]",
           "captures": {
             "1": { "name": "keyword.control.import.include" },
@@ -65,7 +67,7 @@
           }
         },
         {
-          "name": "meta.preprocessor.macro.nupa",
+          "name": "meta.preprocessor.macro.np",
           "match": "^\\s*(#\\s*define)\\s+([A-Za-z_][A-Za-z0-9_]*)",
           "captures": {
             "1": { "name": "keyword.control.define" },
@@ -143,7 +145,7 @@
     "objc-at-interface": {
       "patterns": [
         {
-          "name": "meta.interface-or-protocol.nupa",
+          "name": "meta.interface-or-protocol.np",
           "begin": "(@interface)\\s+([A-Za-z_][A-Za-z0-9_]*)\\s*(:\\s*([A-Za-z_][A-Za-z0-9_]*))?",
           "beginCaptures": {
             "1": { "name": "storage.type" },
@@ -172,7 +174,7 @@
     "objc-at-implementation": {
       "patterns": [
         {
-          "name": "meta.implementation.nupa",
+          "name": "meta.implementation.np",
           "begin": "(@implementation)\\s+([A-Za-z_][A-Za-z0-9_]*)\\s*(:\\s*([A-Za-z_][A-Za-z0-9_]*))?",
           "beginCaptures": {
             "1": { "name": "storage.type" },
@@ -199,10 +201,12 @@
             { "include": "#objc-constants" },
             { "include": "#objc-special" },
             { "include": "#memory-management" },
+            { "include": "#nupa-noarc" },
             { "include": "#c-types" },
             { "include": "#c-storage-struct-enum" },
             { "include": "#c-typedef" },
             { "include": "#c-storage-modifiers" },
+            { "include": "#c-gcc-keywords" },
             { "include": "#c-control" },
             { "include": "#c-operators" },
             { "include": "#namespace-access" },
@@ -223,7 +227,7 @@
     "objc-at-property": {
       "patterns": [
         {
-          "name": "meta.property-directive.nupa",
+          "name": "meta.property-directive.np",
           "begin": "(@property)\\s*(?:\\([^)]*\\))?\\s*",
           "beginCaptures": {
             "1": { "name": "storage.modifier" }
@@ -242,7 +246,7 @@
     "objc-at-selector": {
       "patterns": [
         {
-          "name": "meta.selector.nupa",
+          "name": "meta.selector.np",
           "begin": "(@selector)\\s*(\\()",
           "beginCaptures": {
             "1": { "name": "storage.type" },
@@ -282,6 +286,14 @@
         {
           "name": "keyword.control.exception",
           "match": "@(?:try|catch|finally|throw)\\b"
+        }
+      ]
+    },
+    "nupa-noarc": {
+      "patterns": [
+        {
+          "name": "keyword.control.noarc",
+          "match": "@noarc\\b"
         }
       ]
     },
@@ -329,7 +341,7 @@
     "namespace-decl": {
       "patterns": [
         {
-          "name": "meta.namespace.nupa",
+          "name": "meta.namespace.np",
           "begin": "(@namespace)\\s+([A-Za-z_][A-Za-z0-9_]*)",
           "beginCaptures": {
             "1": { "name": "storage.type.namespace" },
@@ -427,7 +439,7 @@
         },
         {
           "name": "keyword.other.typeof",
-          "match": "\\b(?:sizeof|typeof|typeof__)\\b"
+          "match": "\\b(?:sizeof|typeof)\\b"
         }
       ]
     },
@@ -436,6 +448,22 @@
         {
           "name": "storage.modifier",
           "match": "\\b(?:const|extern|register|restrict|static|volatile|inline|auto)\\b"
+        }
+      ]
+    },
+    "c-gcc-keywords": {
+      "patterns": [
+        {
+          "name": "keyword.other.asm",
+          "match": "\\b(?:asm|__asm|__asm__)\\b"
+        },
+        {
+          "name": "keyword.other.asm-qualifier",
+          "match": "\\b(?:__volatile|__volatile__)\\b"
+        },
+        {
+          "name": "keyword.other.gcc",
+          "match": "\\b(?:__typeof|__typeof__|__alignof|__alignof__|__extension__|__const__|__inline__|__signed__|__restrict__|__restrict|__inline|__signed)\\b"
         }
       ]
     },
@@ -519,7 +547,7 @@
     "block-syntax": {
       "patterns": [
         {
-          "name": "meta.block-literal.nupa",
+          "name": "meta.block-literal.np",
           "match": "\\^(?:\\s*(?:void|int|char|float|double|long|short|unsigned|signed|id|BOOL)\\b)?\\s*\\(",
           "captures": {
             "0": { "name": "keyword.operator.caret" }

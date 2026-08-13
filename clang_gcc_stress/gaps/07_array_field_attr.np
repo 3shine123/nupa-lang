@@ -1,0 +1,6 @@
+#include <stdio.h>
+// 缺口:数组字段之后的 __attribute__ 无法解析(标量字段的可以)。
+struct A {
+    char name[8] __attribute__((aligned(4)));
+};
+int main(void) { return 0; }

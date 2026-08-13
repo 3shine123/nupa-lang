@@ -1,0 +1,10 @@
+#include <stdio.h>
+// 缺口(预处理):#ifdef/#else/#endif 只被收集到 C 头区(文件顶部),
+// 中间的代码不会条件编译 —— 两个分支都会被解析并发射(weak 符号,靠链接器选一个)。
+// 与真实 C 的预处理语义不同,存在歧义。
+#ifdef __clang__
+int which(void) { return 1; }
+#else
+int which(void) { return 2; }
+#endif
+int main(void) { printf("%d\n", which()); return 0; }

@@ -1,0 +1,7 @@
+#include <stdio.h>
+// 缺口:整数字面量后缀(u/UL/LL 等)无法解析,必须去掉。
+int main(void) {
+    unsigned x = 0xF0F0F0F0u;
+    printf("%u\n", x);
+    return 0;
+}

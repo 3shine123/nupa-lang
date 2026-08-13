@@ -1,8 +1,6 @@
 #include <stdio.h>
 #include <string.h>
 #import <Foundation/Foundation.nh>
-#import <Foundation/NPString.nh>
-#import <Foundation/NPString.np>
 
 int main() {
     @autoreleasepool {
@@ -102,7 +100,7 @@ int main() {
         printf("  range(0,7): %s\n", [fr UTF8String]);
 
         printf("─── 18. NPLog with NPString ───\n");
-        NPLog("NPString value: %s", [s4 UTF8String]);
+        NPLog(@"NPString value: %s", [s4 UTF8String]);
 
         printf("─── 19. Large string ───\n");
         NPString *large = [NPString stringWithUTF8String:"The quick brown fox jumps over the lazy dog."];

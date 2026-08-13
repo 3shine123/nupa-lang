@@ -63,6 +63,7 @@ pub enum CstExprKind {
     Block, InitList,
     Unary, Binary, Ternary, Assign,
     Conditional, Cast, Sizeof, Typeof, Alignof,
+    TypeLiteral,
     MessageSend, DotAccess, Arrow, Subscript,
     Call, Comma, Paren,
 }
@@ -74,7 +75,7 @@ pub enum CstStmtKind {
     While, Do, For, ForIn,
     Break, Continue, Return, Goto, Label,
     Try, Catch, Finally, Throw,
-    Synchronized, Autoreleasepool, Decl, Asm,
+    Synchronized, Autoreleasepool, NoArc, Decl, Asm,
 }
 
 // Declaration kinds
@@ -96,6 +97,7 @@ pub struct CstParam {
     pub name: Option<String>,
     pub external_name: Option<String>,
     pub next: Option<Box<CstParam>>,
+    pub attributes: Vec<String>,
 }
 
 // Expression node
@@ -165,6 +167,7 @@ pub enum CstExprData {
     Selector(String),
     Protocol(String),
     Encode(CstType),
+    TypeLiteral(CstType),
     ArrayLit(Vec<CstExpr>),
     DictLit {
         keys: Vec<CstExpr>,
@@ -252,6 +255,7 @@ pub enum CstStmtData {
         body: Box<CstStmt>,
     },
     Autoreleasepool(Box<CstStmt>),
+    NoArc(Box<CstStmt>),
     Asm {
         is_volatile: bool,
         is_goto: bool,

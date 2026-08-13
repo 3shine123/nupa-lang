@@ -1,4 +1,4 @@
-// NPKeywordTest.nh -> 专为测试 @ 关键字编写的进阶工具类
+// NPKeywordTest.h -> 专为测试 @ 关键字编写的进阶工具类
 // 基于 NPFoundation 框架的 Objective-C 风格高阶测试
 
 #import <Foundation/Foundation.nh>
@@ -210,7 +210,7 @@ int main(int argc, const char* argv[])
         printf(">>> 开始 NPFoundation 关键字密集型压力测试 <<<\n\n");
 
         // 1. 初始化监听器与容器
-        NPCollectionInspector* inspector = [[NPCollectionInspector alloc] initWithName:@"核心审计器"];
+        NPCollectionInspector* inspector = [[NPCollectionInspector alloc] initWithName:"核心审计器"];
         NPDataContainer* container = [[NPDataContainer alloc] initWithCapacity:2];
         
         // 设置代理

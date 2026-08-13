@@ -38,7 +38,12 @@ pub fn ownership_for_method(name: &str) -> Ownership {
     if name == "mutableCopy" || (starts_with(name, "mutableCopy") && name.as_bytes().get(11).map_or(false, |&c| c.is_ascii_uppercase())) {
         return Ownership::Retained;
     }
-    Ownership::Retained
+    // ObjC convention: any method not in the alloc/new/copy/mutableCopy/init
+    // families returns an object the caller does NOT own (autoreleased or
+    // unretained). Treating these as retained double-released convenience
+    // constructors like +arrayWithObject: / +stringWithUTF8String: under ARC
+    // (caller release + autorelease pool pop).
+    Ownership::Unretained
 }
 
 pub fn ownership_for_expr(e: &AstExpr) -> Ownership {

@@ -1,0 +1,7 @@
+#include <stdio.h>
+// 缺口:函数内局部变量前的 __attribute__ 无法解析(语句级不支持)。
+int main(void) {
+    __attribute__((unused)) int local = 0;
+    printf("%d\n", local);
+    return 0;
+}

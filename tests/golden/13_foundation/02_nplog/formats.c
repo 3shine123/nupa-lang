@@ -72,8 +72,8 @@ int main() {
     {
         nupa_autoreleasepool_t * __pool = nupa_autoreleasepool_push();
         {
-            NPLog("mix: %d + %s = ok", 42, "nupa");
-            NPLog("just text");
+            NPLog((NPString *)nupa_stringFromCstr("mix: %d + %s = ok"), 42, "nupa");
+            NPLog((NPString *)nupa_stringFromCstr("just text"));
         }
         nupa_autoreleasepool_pop(__pool);
     }

@@ -1,0 +1,5 @@
+#include <stdio.h>
+// 缺口:typedef 与类型之间的 __attribute__ 无法解析。
+// C 里合法,如 typedef __attribute__((aligned(8))) unsigned long w8;
+typedef __attribute__((aligned(8))) unsigned long word8;
+int main(void) { return 0; }

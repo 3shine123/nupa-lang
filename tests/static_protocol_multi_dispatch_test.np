@@ -155,7 +155,7 @@ int main(int argc, const char* argv[])
         
         printf("[协议多态断言 2] 复合协议方法链式静态派发：\n");
         printf("          -> 调用 Serializable: %s\n", [compoundTarget serializeToJSON]);
-        [compoundTarget uploadToCloudWithEndpoint:"https://api.nupa-cloud.org/v1/sync"];
+        [compoundTarget uploadToCloudWithEndpoint:"https://api.np-cloud.org/v1/sync"];
 
         // ----------------------------------------------------
         // 测试点 3：协议 @optional 可选方法的静态编译期安全调用

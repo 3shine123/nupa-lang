@@ -1,6 +1,6 @@
 # Print an optspec for argparse to handle cmd's options that are independent of any subcommand.
 function __fish_nupac_global_optspecs
-    string join \n rewrite-nupa= v/verbose= version= fnupa-arc= fno-nupa-arc= fno-checker= fno-libc= o= I= L= S/asm= arch= gen-completions=
+    string join \n rewrite-nupa= v/verbose= version= fnupa-arc= fno-nupa-arc= fno-checker= fno-libc= trace-refcount= trace-max-iters= trace-no-color= backend= o= I= L= S/asm= arch= gen-completions= Werror emit-bridge-header=
 end
 
 function __fish_nupac_needs_command
@@ -31,10 +31,16 @@ complete -c nupac -n "__fish_nupac_needs_command" -l fnupa-arc -d 'enable ARC (d
 complete -c nupac -n "__fish_nupac_needs_command" -l fno-nupa-arc -d 'disable ARC (MRC)' -r
 complete -c nupac -n "__fish_nupac_needs_command" -l fno-checker -d 'skip type checking' -r
 complete -c nupac -n "__fish_nupac_needs_command" -l fno-libc -d 'bare-metal/freestanding output' -r
+complete -c nupac -n "__fish_nupac_needs_command" -l trace-refcount -d 'print a static reference-count trace (no codegen)' -r
+complete -c nupac -n "__fish_nupac_needs_command" -l trace-max-iters -d 'loop iterations simulated in the refcount trace (default 2)' -r
+complete -c nupac -n "__fish_nupac_needs_command" -l trace-no-color -d 'disable colors in the refcount trace' -r
+complete -c nupac -n "__fish_nupac_needs_command" -l backend -d 'C compiler backend (portable, clang, gcc)' -r
 complete -c nupac -n "__fish_nupac_needs_command" -s o -d 'output path (binary or .c)' -r
 complete -c nupac -n "__fish_nupac_needs_command" -s I -d 'add include dir' -r
 complete -c nupac -n "__fish_nupac_needs_command" -s L -d 'add lib dir' -r
 complete -c nupac -n "__fish_nupac_needs_command" -s S -l asm -d 'link a real assembly file (repeatable)' -r
 complete -c nupac -n "__fish_nupac_needs_command" -l arch -d 'target arch (e.g. -arch x86_64)' -r
 complete -c nupac -n "__fish_nupac_needs_command" -l gen-completions -d 'generate shell completion script (bash|zsh|fish|powershell|elvish)' -r
+complete -c nupac -n "__fish_nupac_needs_command" -l Werror -d 'promote warnings to errors'
+complete -c nupac -n "__fish_nupac_needs_command" -l emit-bridge-header -d 'emit a C bridge header for calling Nupa from C' -r
 complete -c nupac -n "__fish_nupac_needs_command" -a "run" -d 'compile + run, then delete binary'

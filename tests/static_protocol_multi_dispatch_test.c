@@ -374,7 +374,7 @@ int main(int argc, const char * argv[]) {
     NPObject * compoundTarget = (NPObject *)robot;
     printf("[协议多态断言 2] 复合协议方法链式静态派发：\n");
     printf("          -> 调用 Serializable: %s\n", ((NPObject *)compoundTarget)->isa == &nupa_AISecurityGateway_class ? ((struct nupa_AISecurityGateway_vtable *)(compoundTarget)->isa->vtable)->serializeToJSON(compoundTarget, sel_registerName("serializeToJSON")) : ((struct nupa_HeavyRobot_vtable *)(compoundTarget)->isa->vtable)->serializeToJSON(compoundTarget, sel_registerName("serializeToJSON")));
-    ((struct nupa_HeavyRobot_vtable *)(compoundTarget)->isa->vtable)->uploadToCloudWithEndpoint_(compoundTarget, sel_registerName("uploadToCloudWithEndpoint:"), "https://api.nupa-cloud.org/v1/sync");
+    ((struct nupa_HeavyRobot_vtable *)(compoundTarget)->isa->vtable)->uploadToCloudWithEndpoint_(compoundTarget, sel_registerName("uploadToCloudWithEndpoint:"), "https://api.np-cloud.org/v1/sync");
     printf("\n--- 3. 压测协议 @optional 可选方法在静态环境下的安全决议 ---\n");
     NPObject * testSyncObj = (NPObject *)robot;
     int latency = 0;

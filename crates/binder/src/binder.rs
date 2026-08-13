@@ -44,8 +44,12 @@ impl Binder {
 
     fn error(&mut self, line: usize, col: usize, msg: &str) {
         self.has_error = true;
-        self.err_msg = msg.to_string();
-        eprintln!("error:{}:{}: {}", line, col, msg);
+        let entry = format!("{}:{}: {}", line, col, msg);
+        if self.err_msg.is_empty() {
+            self.err_msg = entry;
+        } else {
+            self.err_msg = format!("{}\n{}", self.err_msg, entry);
+        }
     }
 
     fn ns_fqn(&self, name: &str) -> String {
@@ -303,6 +307,7 @@ impl Binder {
                 self.bind_stmt(body);
             }
             CstStmtData::Autoreleasepool(body) => { self.bind_stmt(body); }
+            CstStmtData::NoArc(body) => { self.bind_stmt(body); }
             CstStmtData::Decl(ref mut d) => { self.bind_decl(d); }
             _ => {}
         }
@@ -622,6 +627,29 @@ impl Binder {
 
             CstDeclKind::Using => {
                 if let CstDeclData::Using { ref fqn, ref alias } = d.data {
+                    let line = d.line; let col = d.column;
+                    // Determine the short name that will become visible.
+                    let short = if let Some(ref a) = alias {
+                        Some(a.clone())
+                    } else if fqn.contains("::") {
+                        Some(fqn.rsplit("::").next().unwrap_or(fqn).to_string())
+                    } else {
+                        None // @using namespace X; — no short name introduced
+                    };
+                    if let Some(ref sname) = short {
+                        // Conflict with an existing @using short name (ambiguity).
+                        if let Some(existing) = self.symtab.find_using(sname) {
+                            self.error(line, col, &format!("ambiguous import: '{}' imported from both '{}' and '{}'", sname, existing.fqn, fqn));
+                            return;
+                        }
+                        // Conflict with an existing symbol in the current scope.
+                        if self.symtab.find_class(sname).is_some()
+                            || self.symtab.find_protocol(sname).is_some()
+                            || self.symtab.find_type(sname).is_some() {
+                            self.error(line, col, &format!("'{}' conflicts with an existing symbol", sname));
+                            return;
+                        }
+                    }
                     if let Some(ref a) = alias {
                         // @using Alias = TypeExpr*;
                         // Strip trailing `*` and type args for the find_class check,

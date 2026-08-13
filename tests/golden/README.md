@@ -16,9 +16,19 @@
 09_blocks/          Block 语法（字面量、变量捕获）
 10_edge_cases/      边界情况（nil、instancetype、@class、@selector 等）
 22_c_superset/       C 超集语法（struct、C 风格 cast、函数指针）
-23_asm/              Inline asm（extended asm、命名操作数、asm goto）
-24_asm_fusion/       asm 融合压测（内联+外部 asm × 类/协议/Block/异常/struct/fn-ptr）
+ 23_asm/              Inline asm（extended asm、命名操作数、asm goto）
+ 24_asm_fusion/       asm 融合压测（内联+外部 asm × 类/协议/Block/异常/struct/fn-ptr）
+ 28_refcount_trace/   引用计数追踪器（-trace-refcount）输出快照
 ```
+
+> `28_refcount_trace/` 与其他 golden 目录不同：每个 `.np` 的 `.out` 不是程序运行输出，而是 `nupac -trace-refcount -trace-no-color -trace-max-iters 2` 的追踪快照。运行方式：
+>
+> ```bash
+> ./tests/golden/28_refcount_trace/run_trace_golden.sh
+> # NPAC=/path/to/nupac ./tests/golden/28_refcount_trace/run_trace_golden.sh
+> ```
+>
+> 用例覆盖：多级 retain/release（1→4→0）、double-release 负计数检测、泄漏检测、ARC 自动注入的 `nupa_release`、别名共享、嵌套 `@autoreleasepool`（`@noarc` 内手动 autorelease）、if/else 分支状态克隆、循环迭代产生独立 `Class#N` 身份。`.np` 本身仍是可编译运行的合法 Nupa 程序，会被 `test_all.py` 的 glob 照常编译+运行。
 
 > x86_64 汇编是跨架构用例，不放入默认 arm64 测试套件，单独位于 `asm_x64/`（见下文）。
 
