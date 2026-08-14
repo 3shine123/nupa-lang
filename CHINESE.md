@@ -93,6 +93,7 @@ cd target/release        # 或 target/debug（如果你跑的是 cargo build）
 ```
 
 脚本会安装：
+
 - **二进制** → `<prefix>/bin/nupac`
 - **静态库** → `<prefix>/lib/libnupa.a`
 - **头文件** → `<prefix>/include/`
@@ -313,17 +314,17 @@ int my_log(const char *fmt, ...);
 
 编译器内置了一个 **590 个属性的三分类表**（来源：Clang 和 GCC 官方文档）。`-backend` 选项控制允许使用哪些属性：
 
-| 选项 | 行为 |
-|---|---|
-| `-backend=portable`（默认） | 只允许 gcc 和 clang 都支持的属性，其余报错 |
-| `-backend=clang` | 允许 clang 专属属性（如 `availability`、`diagnose_if`、`objc_direct`） |
-| `-backend=gcc` | 允许 gcc 专属属性（如 `strub`、`optimize`、`stack_protect`） |
+| 选项                      | 行为                                                          |
+| ----------------------- | ----------------------------------------------------------- |
+| `-backend=portable`（默认） | 只允许 gcc 和 clang 都支持的属性，其余报错                                 |
+| `-backend=clang`        | 允许 clang 专属属性（如 `availability`、`diagnose_if`、`objc_direct`） |
+| `-backend=gcc`          | 允许 gcc 专属属性（如 `strub`、`optimize`、`stack_protect`）           |
 
 不在表中的未知属性只产生 warning 并透传，绝不会报错。
 
-### C 桥接（Bridge Header）
+### C 桥接（`-emit-bridge-header`）
 
-Nupa 转译为 C 后，C 代码可以直接调用 Nupa 对象方法。但消息派发需要写 vtable 下标和 SEL 常量，代码冗长且易错。`--emit-bridge-header` 选项为每个方法生成一个 `static inline` 包装函数，让 C 代码像调用普通 C 函数一样调用 Nupa 对象。
+Nupa 转译为 C 后，C 代码可以直接调用 Nupa 对象方法。但消息派发需要写 vtable 下标和 SEL 常量，代码冗长且易错。`-emit-bridge-header` 选项为每个方法生成一个 `static inline` 包装函数，让 C 代码像调用普通 C 函数一样调用 Nupa 对象。
 
 **用法**：先转译 Nupa 库成 C，同时生成桥接头：
 
@@ -374,11 +375,11 @@ clang caller.c lib.c include/nupa/runtime.c -I include -o app
 
 Nupa 的 **ARC 是编译期概念，只分析 `.np` 源码**——C 代码调用桥接函数时，返回值不会自动 retain/release。需要手动管理，遵循 ObjC 的内存管理命名约定：
 
-| 方法家族 | 调用者拥有？ | C 端怎么做 |
-|----------|------------|-----------|
-| `alloc`、`new`、`copy`、`mutableCopy` | ✅ +1 | 用完必须 `nupa_release(obj)` |
-| `init` | ❌ 消耗 alloc | 不需要操作 |
-| 其他（如 `stringWithUTF8String:`） | ❌ autoreleased | 不需要操作；若需跨 pool 存活，先 `nupa_retain(obj)` |
+| 方法家族                               | 调用者拥有？         | C 端怎么做                                 |
+| ---------------------------------- | -------------- | -------------------------------------- |
+| `alloc`、`new`、`copy`、`mutableCopy` | ✅ +1           | 用完必须 `nupa_release(obj)`               |
+| `init`                             | ❌ 消耗 alloc     | 不需要操作                                  |
+| 其他（如 `stringWithUTF8String:`）      | ❌ autoreleased | 不需要操作；若需跨 pool 存活，先 `nupa_retain(obj)` |
 
 ```c
 #include "lib.h"
@@ -495,7 +496,7 @@ id obj = a;                    // ✅ 合法，Animal 继承自 nupa_root
 
 | 写法                          | 含义                       | 适用场景            |
 | --------------------------- | ------------------------ | --------------- |
-| `@interface Xxx`            | 隐式继承 `nupa_root`，最轻量   | 自定义内存布局、内核、嵌入式  |
+| `@interface Xxx`            | 隐式继承 `nupa_root`，最轻量     | 自定义内存布局、内核、嵌入式  |
 | `@interface Xxx : NPObject` | 显式继承，获得 retain/release 等 | 用户态应用、需要完整运行时支持 |
 
 ```nupa
@@ -633,11 +634,11 @@ obj->header.vtable[INDEX_doSomething](obj, arg);
 
 | Nupa 符号                   | 转译后的 C 符号                    |
 | ------------------------- | ---------------------------- |
-| `Game::Player`            | `Game__Player`          |
-| `Game::Entities::Enemy`   | `Game__Entities__Enemy` |
+| `Game::Player`            | `Game__Player`               |
+| `Game::Entities::Enemy`   | `Game__Entities__Enemy`      |
 | 方法 `-[Game::Player init]` | `Game__Player_init`          |
-| VTable                    | `NUPA_VTABLE_$_Game__Player`   |
-| 类元数据                      | `NUPA_CLASS_$_Game__Player`    |
+| VTable                    | `NUPA_VTABLE_$_Game__Player` |
+| 类元数据                      | `NUPA_CLASS_$_Game__Player`  |
 
 **特性**：
 

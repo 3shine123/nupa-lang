@@ -94,6 +94,7 @@ cd target/release        # or target/debug if you ran a plain `cargo build`
 ```
 
 This installs:
+
 - **binary** → `<prefix>/bin/nupac`
 - **static lib** → `<prefix>/lib/libnupa.a`
 - **headers** → `<prefix>/include/`
@@ -313,11 +314,11 @@ int my_log(const char *fmt, ...);
 
 The compiler ships with a **590-attribute classification table** (scraped from Clang and GCC official docs). The `-backend` option controls which attributes are allowed:
 
-| Option | Behavior |
-|---|---|
-| `-backend=portable` (default) | Only attributes supported by both gcc and clang; others error |
-| `-backend=clang` | Allow clang-specific attributes (e.g. `availability`, `diagnose_if`, `objc_direct`) |
-| `-backend=gcc` | Allow gcc-specific attributes (e.g. `strub`, `optimize`, `stack_protect`) |
+| Option                        | Behavior                                                                            |
+| ----------------------------- | ----------------------------------------------------------------------------------- |
+| `-backend=portable` (default) | Only attributes supported by both gcc and clang; others error                       |
+| `-backend=clang`              | Allow clang-specific attributes (e.g. `availability`, `diagnose_if`, `objc_direct`) |
+| `-backend=gcc`                | Allow gcc-specific attributes (e.g. `strub`, `optimize`, `stack_protect`)           |
 
 Unknown attributes (not in the table) produce a warning and pass through — never a hard error.
 
@@ -333,9 +334,9 @@ NPObject *obj = [[NPObject alloc] init];
 [obj release]; // MRC manual release
 ```
 
-### C Bridge (`--emit-bridge-header`)
+### C Bridge (`-emit-bridge-header`)
 
-Nupa transpiles to C, but calling Nupa object methods from C normally requires verbose vtable-index and SEL-constant boilerplate. `--emit-bridge-header` generates a header with `static inline` wrappers for every method, so C code can call Nupa objects like ordinary C functions.
+Nupa transpiles to C, but calling Nupa object methods from C normally requires verbose vtable-index and SEL-constant boilerplate. `-emit-bridge-header` generates a header with `static inline` wrappers for every method, so C code can call Nupa objects like ordinary C functions.
 
 **Usage**: transpile a Nupa library to C, then generate the bridge header:
 
@@ -386,11 +387,11 @@ clang caller.c lib.c include/nupa/runtime.c -I include -o app
 
 Nupa's **ARC is compile-time and applies only to `.np` source** — it never sees calls coming from C. When C code calls bridge functions, objects are **not** automatically retained or released. Manage them manually, following the ObjC memory-management naming convention:
 
-| Method family | Caller owns? | What C code must do |
-|---|---|---|
-| `alloc`, `new`, `copy`, `mutableCopy` | ✅ +1 | Must call `nupa_release(obj)` when done |
-| `init` | ❌ consumes `alloc` | Nothing |
-| everything else (e.g. `stringWithUTF8String:`) | ❌ autoreleased | Nothing, but `nupa_retain(obj)` if it must outlive the current autorelease pool |
+| Method family                                  | Caller owns?       | What C code must do                                                             |
+| ---------------------------------------------- | ------------------ | ------------------------------------------------------------------------------- |
+| `alloc`, `new`, `copy`, `mutableCopy`          | ✅ +1               | Must call `nupa_release(obj)` when done                                         |
+| `init`                                         | ❌ consumes `alloc` | Nothing                                                                         |
+| everything else (e.g. `stringWithUTF8String:`) | ❌ autoreleased     | Nothing, but `nupa_retain(obj)` if it must outlive the current autorelease pool |
 
 ```c
 #include "lib.h"
@@ -416,7 +417,6 @@ int main(void) {
     NPString *copy = nupa_NPString_copy(s);
     nupa_release(copy);
 }
-
 ```
 
 `nupa_retain`, `nupa_release`, `nupa_autorelease`, `nupa_autoreleasepoolPush`/`nupa_autoreleasepoolPop` are declared in `<nupa/runtime.h>` and work on any Nupa object. This is exactly the manual-retain-count (MRC) model — from the C side you can think of Nupa objects as raw pointers you own or don't own by convention.
@@ -528,10 +528,10 @@ struct Dog {
 
 #### `NPObject` vs `nupa_root`
 
-| Declaration                 | Means                               | Use Case                        |
-| --------------------------- | ----------------------------------- | ------------------------------- |
-| `@interface Xxx`            | Implicit `nupa_root`, lightweight    | Custom layout, kernel, embedded |
-| `@interface Xxx : NPObject` | Explicit NPObject, full runtime     | User apps, ARC, retain/release  |
+| Declaration                 | Means                             | Use Case                        |
+| --------------------------- | --------------------------------- | ------------------------------- |
+| `@interface Xxx`            | Implicit `nupa_root`, lightweight | Custom layout, kernel, embedded |
+| `@interface Xxx : NPObject` | Explicit NPObject, full runtime   | User apps, ARC, retain/release  |
 
 ```nupa
 // Lightweight root class, no refcounting overhead
