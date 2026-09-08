@@ -486,6 +486,22 @@ else if self.match_keyword(KeywordKind::Typeof) {
                 if self.current.kind == TokenKind::Identifier {
                     ft.block_name = Some(self.current_text().to_string());
                     self.advance();
+                    // Function pointer ARRAY: T (*name[N])(params) — a
+                    // declarator with an array suffix between the `)` and the
+                    // parameter list (e.g. `int (*row[4])(int)`).
+                    if self.match_token(TokenKind::LBracket) {
+                        ft.is_array = true;
+                        if self.check(TokenKind::RBracket) {
+                            ft.array_size = 0;
+                        } else if let Some(num) = self.current_text().parse::<i32>().ok() {
+                            ft.array_size = num;
+                            self.advance();
+                        } else {
+                            ft.array_size_name = Some(self.current_text().to_string());
+                            self.advance();
+                        }
+                        self.consume(TokenKind::RBracket, "expected ] after array size");
+                    }
                 }
                 self.consume(TokenKind::RParen, "expected ')' after function pointer");
                 if self.match_token(TokenKind::LParen) {
@@ -2879,11 +2895,12 @@ else if self.match_keyword(KeywordKind::Typeof) {
                     let struct_decl = self.parse_struct_body(is_union)?;
                     self.add_type_name(&name);
                     // Parse typedef name
-                    if self.current.kind == TokenKind::Identifier {
-                        let alias = self.current_text().to_string();
-                        self.advance();
-                        self.consume(TokenKind::Semicolon, "expected ; after typedef");
-                        self.add_type_name(&alias);
+if self.current.kind == TokenKind::Identifier {
+                    let alias = self.current_text().to_string();
+                    self.advance();
+                    self.consume(TokenKind::Semicolon, "expected ; after typedef");
+                    self.add_type_name(&name);
+                    self.add_type_name(&alias);
                         return Some(CstDecl {
                             kind: CstDeclKind::Typedef,
                             line: self.previous.line, column: self.previous.column,
@@ -2909,6 +2926,31 @@ else if self.match_keyword(KeywordKind::Typeof) {
                         data: CstDeclData::Aggregate { fields: struct_decl, is_union },
                                             attributes: Vec::new(),
 });
+                }
+                // `typedef struct Tag Alias;` — tag reference with an alias
+                // (the tag may be only forward-declared). Emit a Typedef whose
+                // alias_type is `struct Tag`; the forward-declared Struct for
+                // the tag itself is emitted separately by consumers.
+                if self.current.kind == TokenKind::Identifier {
+                    let alias = self.current_text().to_string();
+                    self.advance();
+                    self.consume(TokenKind::Semicolon, "expected ; after typedef");
+                    self.add_type_name(&alias);
+                    return Some(CstDecl {
+                        kind: CstDeclKind::Typedef,
+                        line: self.previous.line, column: self.previous.column,
+                        name: Some(alias),
+                        next: None,
+                        data: CstDeclData::Typedef {
+                            alias_type: Some(Box::new(CstType {
+                                prim: TypePrim::Named, is_struct: true,
+                                name: Some(name.clone()),
+                                ..CstType::new(TypePrim::Named)
+                            })),
+                            struct_fields: Vec::new(),
+                        },
+                        attributes: Vec::new(),
+                    });
                 }
                 // Forward declaration
                 self.consume(TokenKind::Semicolon, "expected ; after struct name");
@@ -3004,6 +3046,23 @@ else if self.match_keyword(KeywordKind::Typeof) {
         if self.current.kind == TokenKind::Identifier {
             let name = self.current_text().to_string();
             self.advance();
+            // typedef array: `typedef int Row4[4];` — the array size(s) follow
+            // the typedef name and attach to the aliased type.
+            let mut at = alias_type;
+            while self.match_token(TokenKind::LBracket) {
+                let mut arr = CstType::new(TypePrim::Named);
+                arr.subtype = Some(Box::new(at.unwrap_or_else(|| CstType::new(TypePrim::Int))));
+                arr.is_array = true;
+                if self.current.kind == TokenKind::Integer {
+                    arr.array_size = self.current_text().parse().unwrap_or(0);
+                    self.advance();
+                } else if self.current.kind == TokenKind::Identifier {
+                    arr.array_size_name = Some(self.current_text().to_string());
+                    self.advance();
+                }
+                at = Some(arr);
+                self.consume(TokenKind::RBracket, "expected ] after array size");
+            }
             self.consume(TokenKind::Semicolon, "expected ; after typedef");
             self.add_type_name(&name);
             return Some(CstDecl {
@@ -3012,7 +3071,7 @@ else if self.match_keyword(KeywordKind::Typeof) {
                 name: Some(name),
                 next: None,
                 data: CstDeclData::Typedef {
-                    alias_type: alias_type.map(Box::new),
+                    alias_type: at.map(Box::new),
                     struct_fields: Vec::new(),
                 },
                             attributes: Vec::new(),
@@ -3028,21 +3087,54 @@ else if self.match_keyword(KeywordKind::Typeof) {
         while !self.check(TokenKind::RBrace) && !self.check(TokenKind::Eof) {
             self.match_keyword(KeywordKind::Extension); // __extension__ prefix
             if let Some(ftype) = self.parse_type_full() {
-                if self.current.kind == TokenKind::Identifier {
-                    let fname = self.current_text().to_string();
+                // Field name: either a trailing identifier, or the name
+                // embedded in a function-pointer/block declarator type
+                // (`int (*cb)(int)` / `void (^blk)(int)`).
+                let fname = if let Some(ref bn) = ftype.block_name {
+                    bn.clone()
+                } else if self.current.kind == TokenKind::Identifier {
+                    let n = self.current_text().to_string();
                     self.advance();
-                    // Array field: name[size]
+                    n
+                } else {
+                    String::new()
+                };
+                if !fname.is_empty() {
                     let mut field_type = ftype;
-                    if self.match_token(TokenKind::LBracket) {
+                    // Array field(s): name[size1][size2]... — loop so
+                    // multi-dimensional arrays nest correctly.
+                    while self.match_token(TokenKind::LBracket) {
                         let mut array_type = CstType::new(TypePrim::Named);
                         array_type.subtype = Some(Box::new(field_type));
                         array_type.is_array = true;
                         if self.current.kind == TokenKind::Integer {
                             array_type.array_size = self.current_text().parse().unwrap_or(0);
                             self.advance();
+                        } else if self.current.kind == TokenKind::Identifier {
+                            array_type.array_size_name = Some(self.current_text().to_string());
+                            self.advance();
                         }
                         field_type = array_type;
                         self.consume(TokenKind::RBracket, "expected ']'");
+                    }
+                    // Bitfield: `unsigned a : 3;` — consume the width and
+                    // downgrade to a plain field (approximate C semantics:
+                    // width is dropped; the type is kept as `unsigned`).
+                    while self.match_token(TokenKind::Colon) {
+                        // Consume a simple constant width expression:
+                        // literals/identifiers joined by + - * << >> | &
+                        if self.check(TokenKind::Integer) || self.check(TokenKind::Identifier) {
+                            self.advance();
+                        }
+                        while matches!(self.current.kind,
+                            TokenKind::Plus | TokenKind::Minus | TokenKind::Star |
+                            TokenKind::LShift | TokenKind::RShift |
+                            TokenKind::Pipe | TokenKind::Ampersand) {
+                            self.advance();
+                            if self.check(TokenKind::Integer) || self.check(TokenKind::Identifier) {
+                                self.advance();
+                            }
+                        }
                     }
                     let field_attrs = self.parse_attributes();
                     fields.push(CstDecl {

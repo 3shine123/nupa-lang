@@ -70,10 +70,45 @@ fn try_open(name: &str, search_dirs: &[String]) -> Option<String> {
     fs::read_to_string(name).ok()
 }
 
+/// A conditional-block frame on the `cond_stack`.
+///
+/// `active` is whether this specific branch emits, `any_met` whether an
+/// earlier branch in the same chain was taken. For a *singleton self-guard*
+/// (`#ifndef NAME` … `#define NAME` … `#endif` with nothing else inside) we
+/// additionally remember the guard name and the define line so the guard can
+/// be preserved verbatim in the C output. This lets the C compiler respect a
+/// pre-existing definition of `NAME` (e.g. `nupa/runtime.h`'s `YES`/`NO`)
+/// instead of redefining the macro (`-Wmacro-redefined`).
+struct CondFrame {
+    active: bool,
+    any_met: bool,
+    /// Some(NAME) while this frame is still a singleton-self-guard candidate.
+    /// Cleared as soon as anything else (other content, `#else`, another
+    /// define, …) appears inside the block.
+    guard_name: Option<String>,
+    /// The `#define NAME` line stashed while we wait for the matching `#endif`.
+    pending_define: Option<String>,
+    /// Set once the block contains anything other than the guarded define —
+    /// disables preservation (behaves like a condition that is flattened away).
+    dirty: bool,
+}
+
+/// A guard candidate that turned out not to be a pure singleton self-guard
+/// is flushed back to the plain flattened behaviour: the definition is emitted
+/// unconditionally (as before) and the guard directives stay dropped.
+fn poison_top_guard(cond_stack: &mut Vec<CondFrame>, c_out: &mut Vec<String>) {
+    if let Some(frame) = cond_stack.last_mut() {
+        if frame.guard_name.is_some() || frame.pending_define.is_some() {
+            frame.dirty = true;
+            frame.guard_name = None;
+            if let Some(def) = frame.pending_define.take() {
+                c_out.push(def.trim().to_string());
+            }
+        }
+    }
+}
+
 /// Recursively resolve #import and collect #include from a single file's content.
-/// `cond_stack` tracks conditional blocks: each entry is `(branch_active, any_met)`
-/// where `branch_active` is whether this specific branch (#if/#elif/#else) is emitting,
-/// and `any_met` is whether any earlier branch in the same chain was taken.
 fn resolve_source(
     content: &str,
     file_path: &str,
@@ -82,7 +117,7 @@ fn resolve_source(
     nupa_out: &mut String,
     c_out: &mut Vec<String>,
     defined: &mut HashSet<String>,
-    cond_stack: &mut Vec<(bool, bool)>,
+    cond_stack: &mut Vec<CondFrame>,
 ) -> Result<(), String> {
     let dir = Path::new(file_path).parent()
         .and_then(|p| p.to_str())
@@ -92,12 +127,12 @@ fn resolve_source(
     for line in content.lines() {
         let trimmed = line.trim();
         // `active` = all blocks (including current) are emitting code.
-        let active = cond_stack.iter().map(|&(a, _)| a).all(|a| a);
+        let active = cond_stack.iter().all(|f| f.active);
         // `parent_active` = all blocks except the innermost are emitting.
         // Used to decide #elif/#else (which replace the current branch), so the
         // current branch's own inactive state must not suppress re-evaluation.
         let parent_active = cond_stack[..cond_stack.len().saturating_sub(1)]
-            .iter().map(|&(a, _)| a).all(|a| a);
+            .iter().all(|f| f.active);
 
         // Conditional directives: #ifdef / #ifndef / #if / #elif / #else / #endif
         if trimmed.starts_with('#') {
@@ -106,39 +141,69 @@ fn resolve_source(
                 let name = rest.trim().split(|c: char| c.is_whitespace() || c == '(' || c == ')')
                     .next().unwrap_or("").to_string();
                 let truthy = parent_active && (defined.contains(&name) || predefined_macro(&name));
-                cond_stack.push((truthy, truthy));
+                cond_stack.push(CondFrame { active: truthy, any_met: truthy, guard_name: None, pending_define: None, dirty: false });
                 continue;
             } else if let Some(rest) = after.strip_prefix("ifndef") {
                 let name = rest.trim().split(|c: char| c.is_whitespace() || c == '(' || c == ')')
                     .next().unwrap_or("").to_string();
                 let truthy = parent_active && !(defined.contains(&name) || predefined_macro(&name));
-                cond_stack.push((truthy, truthy));
+                cond_stack.push(CondFrame {
+                    active: truthy, any_met: truthy,
+                    // Only an active singleton `#ifndef` can be preserved.
+                    guard_name: if truthy { Some(name) } else { None },
+                    pending_define: None, dirty: false,
+                });
                 continue;
             } else if after.starts_with("if ") || after.starts_with("if\t") {
                 let expr = after[2..].trim();
                 let truthy = parent_active && eval_if_expr(expr, defined);
-                cond_stack.push((truthy, truthy));
+                cond_stack.push(CondFrame { active: truthy, any_met: truthy, guard_name: None, pending_define: None, dirty: false });
                 continue;
             } else if after.starts_with("elif") {
-                if let Some((ref mut branch_active, ref mut any_met)) = cond_stack.last_mut() {
-                    if *any_met {
-                        *branch_active = false;
+                // An `#elif` inside a self-guard candidate forces flattening.
+                poison_top_guard(cond_stack, c_out);
+                if let Some(frame) = cond_stack.last_mut() {
+                    frame.dirty = true;
+                    frame.guard_name = None;
+                    if frame.any_met {
+                        frame.active = false;
                     } else {
                         let rest = after["elif".len()..].trim();
                         let expr = rest.strip_prefix("if ").or_else(|| rest.strip_prefix("if\t")).unwrap_or(rest);
                         let result = parent_active && eval_if_expr(expr.trim(), defined);
-                        *branch_active = result;
-                        *any_met = result;
+                        frame.active = result;
+                        frame.any_met = result;
                     }
                 }
                 continue;
             } else if after.starts_with("else") {
-                if let Some((ref mut branch_active, ref any_met)) = cond_stack.last_mut() {
-                    *branch_active = !*any_met;
+                // An `#else` inside a self-guard candidate forces flattening.
+                poison_top_guard(cond_stack, c_out);
+                if let Some(frame) = cond_stack.last_mut() {
+                    frame.dirty = true;
+                    frame.guard_name = None;
+                    frame.active = !frame.any_met;
                 }
                 continue;
             } else if after.starts_with("endif") {
-                cond_stack.pop();
+                if let Some(frame) = cond_stack.pop() {
+                    if let Some(name) = frame.guard_name {
+                        if !frame.dirty {
+                            // Pure singleton self-guard: preserve it so the C
+                            // compiler honours a definition seen earlier
+                            // (e.g. nupa/runtime.h's `YES`/`NO`).
+                            if let Some(def) = frame.pending_define {
+                                c_out.push(format!("#ifndef {}", name));
+                                c_out.push(def.trim().to_string());
+                                c_out.push("#endif".to_string());
+                            }
+                        } else if let Some(def) = frame.pending_define {
+                            c_out.push(def.trim().to_string());
+                        }
+                    } else if let Some(def) = frame.pending_define {
+                        c_out.push(def.trim().to_string());
+                    }
+                }
                 continue;
             }
         }
@@ -154,7 +219,10 @@ fn resolve_source(
         }
 
         if let Some((is_nupa_import, name)) = is_directive(line) {
+            // Anything inside a guard candidate besides the define it guards
+            // forces the flat (non-preserved) emission.
             if is_nupa_import {
+                poison_top_guard(cond_stack, c_out);
                 // #import of .nh/.np (or .np) → recursively resolve
                 let mut search = search_dirs.to_vec();
                 // Add source directory first
@@ -163,6 +231,7 @@ fn resolve_source(
                 }
                 resolve_imports(&name, &search, resolved, nupa_out, c_out, defined, cond_stack)?;
             } else {
+                poison_top_guard(cond_stack, c_out);
                 // #include → collect for C output (verbatim)
                 let orig = line.trim().to_string();
                 if !c_out.contains(&orig) {
@@ -187,20 +256,43 @@ fn resolve_source(
                 // #define with message send: NOT supported. The C compiler
                 // doesn't understand [receiver msg] syntax, and the Nupa
                 // compiler can't expand macros. Users should use inline code.
+                poison_top_guard(cond_stack, c_out);
                 let orig = line.to_string();
                 c_out.push(orig.trim().to_string());
-            } else {
-                // Register #define names for later #ifdef checks; keep the
-                // directive in the C output.
-                if let Some(rest) = trimmed.strip_prefix("#define") {
-                    let name = rest.trim().split_whitespace().next().unwrap_or("");
-                    if !name.is_empty() { defined.insert(name.to_string()); }
+            } else if let Some(rest) = trimmed.strip_prefix("#define") {
+                let name = rest.trim().split_whitespace().next().unwrap_or("").to_string();
+                if !name.is_empty() { defined.insert(name.clone()); }
+                // Singleton self-guard candidate: `#ifndef NAME` guarding
+                // exactly `#define NAME …` — stash the define so the guard can
+                // be preserved in the C output (avoids macro redefinition when
+                // the macro was already defined by an included header).
+                let is_guarded_define = cond_stack.last().map_or(false, |f| {
+                    f.guard_name.as_deref() == Some(name.as_str())
+                        && f.pending_define.is_none()
+                        && !f.dirty
+                });
+                if is_guarded_define {
+                    if let Some(frame) = cond_stack.last_mut() {
+                        frame.pending_define = Some(line.to_string());
+                    }
+                } else {
+                    poison_top_guard(cond_stack, c_out);
+                    let orig = line.to_string();
+                    c_out.push(orig.trim().to_string());
                 }
+            } else {
+                // #pragma, #warning, etc.
+                poison_top_guard(cond_stack, c_out);
                 let orig = line.to_string();
                 c_out.push(orig.trim().to_string());
             }
         } else {
-            // Regular nupa source line
+            // Regular nupa source line. Blank lines and `//` comments are
+            // inert — they do not break a pure singleton self-guard.
+            let non_inert = !(trimmed.is_empty() || trimmed.starts_with("//"));
+            if non_inert {
+                poison_top_guard(cond_stack, c_out);
+            }
             nupa_out.push_str(line);
             nupa_out.push('\n');
         }
@@ -309,7 +401,7 @@ fn resolve_imports(
     nupa_out: &mut String,
     c_out: &mut Vec<String>,
     defined: &mut HashSet<String>,
-    cond_stack: &mut Vec<(bool, bool)>,
+    cond_stack: &mut Vec<CondFrame>,
 ) -> Result<(), String> {
     // Try to find the file
     let content = try_open(name, search_dirs)
@@ -349,7 +441,7 @@ impl Preprocessor {
         let mut c_out = Vec::new();
         let mut defined = HashSet::new();
         for m in extra_macros { defined.insert(m.to_string()); }
-        let mut cond_stack: Vec<(bool, bool)> = Vec::new();
+        let mut cond_stack: Vec<CondFrame> = Vec::new();
 
         resolve_source(content, file_path, search_dirs, &mut resolved, &mut nupa_out, &mut c_out, &mut defined, &mut cond_stack)?;
 

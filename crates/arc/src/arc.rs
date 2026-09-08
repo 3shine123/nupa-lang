@@ -19,10 +19,11 @@ pub struct ArcAction {
 #[derive(Debug, Clone)]
 pub struct ArcResult {
     pub actions: Vec<ArcAction>,
+    pub leak_warnings: Vec<String>,
 }
 
 impl ArcResult {
-    pub fn new() -> Self { ArcResult { actions: Vec::new() } }
+    pub fn new() -> Self { ArcResult { actions: Vec::new(), leak_warnings: Vec::new() } }
 }
 
 fn make_release_stmt(target: &AstExpr) -> AstStmt {

@@ -14,6 +14,7 @@ _nupac() {
                 '-fno-nupa-arc[disable ARC (MRC)]' \
                 '-fno-checker[skip type checking]' \
                 '-fno-libc[bare-metal/freestanding output]' \
+                '-no-comments[omit readability comments in generated C (default: on)]' \
                 '-trace-refcount[print a static reference-count trace (no codegen)]' \
                 '-trace-max-iters[loop iterations in the refcount trace (default 2)]' \
                 '-trace-no-color[disable colors in the refcount trace]' \

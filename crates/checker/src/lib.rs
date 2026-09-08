@@ -216,6 +216,15 @@ impl Checker {
             }
             AstExprData::MsgSend { receiver, args, selector, is_class_method, .. } => {
                 self.check_expr(&mut *receiver);
+                // nil-messaging: sending a message to a receiver that is
+                // statically known to be `nil` is a safe no-op at runtime
+                // (returns 0/nil, never crashes — codegen guards against nil),
+                // but it is almost always a logic bug: the result will silently
+                // be zero. Warn so the programmer knows the send is dead.
+                if matches!(receiver.kind, AstExprKind::Nil) {
+                    self.check_warning(e.line, e.col, &format!(
+                        "message '{}' sent to nil receiver; result is always zero/nil", selector));
+                }
                 // Receiver kind vs method kind: a class singleton receives only
                 // `+` class methods, an instance only `-` instance methods.  In
                 // ObjC these are runtime "unrecognized selector" crashes; Nupa

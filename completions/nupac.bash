@@ -28,7 +28,7 @@ _nupac() {
 
     case "${cmd}" in
         nupac)
-            opts="-v -o -I -L -S -Werror -emit-bridge-header -rewrite-nupa --verbose --version -fnupa-arc -fno-nupa-arc -fno-checker -fno-libc -trace-refcount -trace-max-iters -trace-no-color -backend -asm -arch --gen-completions run"
+            opts="-v -o -I -L -S -Werror -emit-bridge-header -rewrite-nupa --verbose --version -fnupa-arc -fno-nupa-arc -fno-checker -fno-libc -no-comments -trace-refcount -trace-max-iters -trace-no-color -backend -asm -arch --gen-completions run"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 1 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -63,6 +63,10 @@ _nupac() {
                     return 0
                     ;;
                 -fno-libc)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -no-comments)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
