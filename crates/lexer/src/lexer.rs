@@ -25,6 +25,7 @@ const KW_TABLE: &[(&str, KeywordKind)] = &[
     ("@private", KeywordKind::AtPrivate),
     ("@defs", KeywordKind::AtDefs),
     ("@namespace", KeywordKind::AtNamespace),
+    ("@endnamespace", KeywordKind::AtEndNamespace),
     ("@using", KeywordKind::AtUsing),
     ("@noarc", KeywordKind::AtNoArc),
     ("readwrite", KeywordKind::AtReadwrite),
@@ -390,6 +391,49 @@ impl<'a> Lexer<'a> {
                         TokenKind::Error
                     };
                     return self.make_token(kind, start, self.pos - start, kw);
+                }
+                Some(nc) if nc.is_ascii_digit() => {
+                    // `@123` / `@1.5` — NPNumber boxing literal. The `@` has
+                    // already been consumed; scan the numeric text.
+                    while self.pos < self.source.len()
+                        && self.source.as_bytes()[self.pos].is_ascii_digit() {
+                        self.advance();
+                    }
+                    // Fractional part: only consume `.` when followed by a digit,
+                    // so `@1.foo` never swallows the dot.
+                    if self.source.as_bytes().get(self.pos) == Some(&b'.')
+                        && self.source.as_bytes().get(self.pos + 1).map_or(false, |b| b.is_ascii_digit()) {
+                        self.advance(); // '.'
+                        while self.pos < self.source.len()
+                            && self.source.as_bytes()[self.pos].is_ascii_digit() {
+                            self.advance();
+                        }
+                    }
+                    // Exponent: e/E [sign] digits.
+                    if matches!(self.source.as_bytes().get(self.pos), Some(b'e') | Some(b'E')) {
+                        let save = self.pos;
+                        self.advance();
+                        if matches!(self.source.as_bytes().get(self.pos), Some(b'+') | Some(b'-')) {
+                            self.advance();
+                        }
+                        if self.source.as_bytes().get(self.pos).map_or(false, |b| b.is_ascii_digit()) {
+                            while self.pos < self.source.len()
+                                && self.source.as_bytes()[self.pos].is_ascii_digit() {
+                                self.advance();
+                            }
+                        } else {
+                            self.pos = save; // not actually an exponent
+                        }
+                    }
+                    return Token {
+                        kind: TokenKind::AtNumber,
+                        keyword: KeywordKind::None,
+                        start: start + 1, // exclude the leading '@'
+                        length: self.pos - (start + 1),
+                        line,
+                        column: col,
+                        char_val: 0,
+                    };
                 }
                 _ => {
                     return self.make_token(TokenKind::Error, start, 1, KeywordKind::None);

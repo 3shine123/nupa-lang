@@ -41,7 +41,7 @@ static void trim_leading(const char **p) {
 
 // ── read_line with full terminal support ─────────────────────────────────────
 
-@namespace TOML {
+@namespace TOML
 
     static int read_line(char *buf, int size) {
         if (!isatty(STDIN_FILENO)) {
@@ -128,11 +128,11 @@ static void trim_leading(const char **p) {
         return len;
     }
 
-} // @namespace TOML
+@endnamespace // @namespace TOML
 
 // ── @implementation: value types ────────────────────────────────────────────
 
-@namespace TOML {
+@namespace TOML
 
     @implementation String
 
@@ -262,11 +262,11 @@ static void trim_leading(const char **p) {
 
     @end
 
-} // @namespace TOML
+@endnamespace // @namespace TOML
 
 // ── @implementation: Table ──────────────────────────────────────────────────
 
-@namespace TOML {
+@namespace TOML
 
     @implementation Table
 
@@ -380,11 +380,11 @@ static void trim_leading(const char **p) {
 
     @end
 
-} // @namespace TOML
+@endnamespace // @namespace TOML
 
 // ── @implementation: Parser ─────────────────────────────────────────────────
 
-@namespace TOML {
+@namespace TOML
 
     // Exception for parse errors
     @interface ParseError : NPObject {
@@ -1075,11 +1075,11 @@ static void trim_leading(const char **p) {
 
     @end
 
-} // @namespace TOML
+@endnamespace // @namespace TOML
 
 // ── @implementation: Editor ─────────────────────────────────────────────────
 
-@namespace TOML {
+@namespace TOML
 
     @implementation Editor
 
@@ -1376,7 +1376,7 @@ static void trim_leading(const char **p) {
 
     @end
 
-} // @namespace TOML
+@endnamespace // @namespace TOML
 
 // ── Buffer<T> + Watcher ─────────────────────────────────────────────────────
 

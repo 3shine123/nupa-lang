@@ -648,7 +648,7 @@ Reference counting is managed by compile-time static ARC analysis, not stored in
 `@namespace` organizes classes, functions, and constants, avoiding global name collisions. This is a feature ObjC lacks — traditional ObjC relies on prefix conventions (e.g., `NS`, `UI`) to simulate namespacing.
 
 ```nupa
-@namespace Game {
+@namespace Game
     @interface Player : NPObject {
         int health;
     }
@@ -664,13 +664,13 @@ Reference counting is managed by compile-time static ARC analysis, not stored in
     }
     - (int)getHealth { return health; }
     @end
-}
+@endnamespace
 
-@namespace UI {
+@namespace UI
     @interface HUD : NPObject {}
     - (void)showPlayerHealth:(Game::Player *)player;
     @end
-}
+@endnamespace
 ```
 
 **Encoding rules**: `::` separators are encoded as `__` in C symbols.

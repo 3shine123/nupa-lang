@@ -2,7 +2,7 @@
 #include <stdio.h>
 #import <Foundation/Foundation.nh>
 
-@namespace Game {
+@namespace Game
     @interface Player : NPObject {
         @public
         int level;
@@ -17,9 +17,9 @@
         return self;
     }
     @end
-}
+@endnamespace
 
-@namespace UI {
+@namespace UI
     @interface HUD : NPObject {
         @public
         int value;
@@ -34,7 +34,7 @@
         return self;
     }
     @end
-}
+@endnamespace
 
 @using GamePlayer = Game::Player;
 @using UIHUD = UI::HUD;

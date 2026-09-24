@@ -4,7 +4,7 @@
 #include <ui.h>
 #import <Foundation/Foundation.nh>
 
-@namespace LibUI {
+@namespace LibUI
 
     @interface Window : NPObject {
         @public
@@ -94,6 +94,6 @@
         - (struct uiTab *)handle;
     @end
 
-} // @namespace LibUI
+@endnamespace // @namespace LibUI
 
 #endif

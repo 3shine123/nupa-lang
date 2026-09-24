@@ -10,8 +10,8 @@
 // ============================================================================
 // 1. 命名空间「Ledger::Core」：底层账本与区块结构
 // ============================================================================
-@namespace Ledger {
-    @namespace Core {
+@namespace Ledger
+    @namespace Core
         @interface TransactionBlock : NPObject {
             @public
             int _txCount; // 交易笔数
@@ -47,14 +47,14 @@
             return self;
         }
         @end
-    }
-}
+    @endnamespace
+@endnamespace
 
 // ============================================================================
 // 2. 命名空间「Network::Engine」：共识校验引擎
 // ============================================================================
-@namespace Network {
-    @namespace Engine {
+@namespace Network
+    @namespace Engine
         // 声明共识签名校验的高阶回调 Block
         typedef int (^SignatureVerifyBlock)(int rawCount);
 
@@ -100,14 +100,14 @@
             return rewardScore;
         }
         @end
-    }
-}
+    @endnamespace
+@endnamespace
 
 // ============================================================================
 // 3. 命名空间「Network::Extensions」：网络路由插件升级
 // ============================================================================
-@namespace Network {
-    @namespace Extensions {
+@namespace Network
+    @namespace Extensions
         @interface RouterPlugin : NPObject {
             @public
             const char* _pluginName;
@@ -143,8 +143,8 @@
             }
         }
         @end
-    }
-}
+    @endnamespace
+@endnamespace
 
 
 // ============================================================================

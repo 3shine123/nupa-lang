@@ -605,7 +605,7 @@ obj->header.vtable[INDEX_doSomething](obj, arg);
 `@namespace` 用于组织类、函数、常量等代码实体，避免全局命名冲突。这是 ObjC 没有的特性——在传统 ObjC 中需要用前缀（如 `NS`、`UI`）来模拟。
 
 ```nupa
-@namespace Game {
+@namespace Game
     @interface Player : NPObject {
         int health;
     }
@@ -621,13 +621,13 @@ obj->header.vtable[INDEX_doSomething](obj, arg);
     }
     - (int)getHealth { return health; }
     @end
-}
+@endnamespace
 
-@namespace UI {
+@namespace UI
     @interface HUD : NPObject {}
     - (void)showPlayerHealth:(Game::Player *)player;
     @end
-}
+@endnamespace
 ```
 
 **编码规则**：命名空间通过 `::` 分隔，转译为 C 时使用 `__` 编码。

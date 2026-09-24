@@ -9,7 +9,7 @@
 // ============================================================================
 // 1. 深层多级命名空间定义
 // ============================================================================
-@namespace Extreme::Engine::Graphics {
+@namespace Extreme::Engine::Graphics
 
     @interface TextureHandle : NPObject {
         @public
@@ -53,13 +53,13 @@
         [super dealloc];
     }
     @end
-}
+@endnamespace
 
 
 // ============================================================================
 // 2. 多级命名空间下的泛型容器
 // ============================================================================
-@namespace Extreme::Container {
+@namespace Extreme::Container
 
     @interface List<T> : NPObject {
         @public
@@ -85,13 +85,13 @@
         [super dealloc];
     }
     @end
-}
+@endnamespace
 
 
 // ============================================================================
 // 3. 核心压测类：方法声明与实现中密集使用 - (Xxx::Yyy::Zzz *) 语法
 // ============================================================================
-@namespace Extreme::Engine {
+@namespace Extreme::Engine
 
     @interface RenderPipeline : NPObject {
         @public
@@ -167,7 +167,7 @@
     }
 
     @end
-}
+@endnamespace
 
 
 // ============================================================================

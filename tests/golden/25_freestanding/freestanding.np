@@ -10,7 +10,7 @@ extern void kputhex(unsigned v);
 extern BareMetal::Calculator   *create_calculator(void);
 extern BareMetal::NupaIoError  *create_error(int code);
 
-@namespace BareMetal {
+@namespace BareMetal
 
     @interface Calculator {
         int total;
@@ -55,7 +55,7 @@ extern BareMetal::NupaIoError  *create_error(int code);
     - (int) add:(int)x     { total += x; return total; }
     - (int) value          { return total; }
     @end
-}
+@endnamespace
 
 int main() {
     nupa_meta_init();

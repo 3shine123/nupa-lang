@@ -1,0 +1,32 @@
+#ifndef NPNUMBER_NH
+#define NPNUMBER_NH
+
+#import <Foundation/NPObject.nh>
+#import <Foundation/NPString.nh>
+
+@interface NPNumber : NPObject {
+@public
+    int         _isDouble;
+    long long   _intValue;
+    double      _doubleValue;
+}
+
++ (NPNumber *)numberWithInt:(int)value;
++ (NPNumber *)numberWithLongLong:(long long)value;
++ (NPNumber *)numberWithDouble:(double)value;
++ (NPNumber *)numberWithBool:(int)value;
+
+- (NPNumber *)initWithLongLong:(long long)value;
+- (NPNumber *)initWithDouble:(double)value;
+
+- (int)intValue;
+- (long long)longLongValue;
+- (double)doubleValue;
+- (int)boolValue;
+
+- (NPString *)description;
+- (int)isEqualToNumber:(NPNumber *)other;
+
+@end
+
+#endif

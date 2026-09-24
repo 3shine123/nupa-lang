@@ -10,7 +10,7 @@
 // ============================================================================
 // 1. 命名空间一：Quantum::Core (量子核心资源)
 // ============================================================================
-@namespace Quantum::Core {
+@namespace Quantum::Core
 
     // 协议：能量输出者
     @protocol EnergyProvider
@@ -83,13 +83,13 @@
         [super dealloc];
     }
     @end
-}
+@endnamespace
 
 
 // ============================================================================
 // 2. 命名空间二：Storage::Infrastructure (通用泛型存储仓库)
 // ============================================================================
-@namespace Storage::Infrastructure {
+@namespace Storage::Infrastructure
 
     // 🌟 硬核测试点：ObjC 单态化泛型类 StorageVault<T>
     @interface StorageVault <T> : NPObject {
@@ -154,13 +154,13 @@
         [super dealloc];
     }
     @end
-}
+@endnamespace
 
 
 // ============================================================================
 // 3. 跨空间控制器与 Category 静态扩展
 // ============================================================================
-@namespace Dispatcher {
+@namespace Dispatcher
 
     @interface HubController : NPObject {
         @public
@@ -200,7 +200,7 @@
         [super dealloc];
     }
     @end
-}
+@endnamespace
 
 // 分类 Category 扩展：直接给带命名空间的 HubController 注入诊断功能
 @interface Dispatcher::HubController (DiagnosticUpgrade)

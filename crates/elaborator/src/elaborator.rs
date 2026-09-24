@@ -832,6 +832,9 @@ impl Elaborator {
                 };
                 AstDecl { kind: AstDeclKind::Asm, line, col, name: cd.name.clone(), data: AstDeclData::Asm { is_volatile: *is_volatile, is_goto: *is_goto, template: template.clone(), outputs: conv(outputs), inputs: conv(inputs), clobbers: clobbers.clone(), labels: labels.clone() }, attributes: cd.attributes.clone() }
             }
+            CstDeclData::RawLine(text) => {
+                AstDecl { kind: AstDeclKind::RawLine, line, col, name: None, data: AstDeclData::RawLine(text.clone()), attributes: Vec::new() }
+            }
             CstDeclData::Forward(names) => {
                 let fqns: Vec<String> = names.iter().map(|n| self.ns_fqn(n)).collect();
                 AstDecl { kind: AstDeclKind::ForwardClass, line, col, name: None, data: AstDeclData::ForwardClass { names: fqns }, attributes: Vec::new() }

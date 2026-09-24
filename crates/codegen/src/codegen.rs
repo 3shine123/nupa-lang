@@ -257,7 +257,7 @@ pub enum CgStmtData {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CgDeclKind {
-    Function, Variable, Typedef, Struct, ExternFunc, Enum, Asm, ForwardClass,
+    Function, Variable, Typedef, Struct, ExternFunc, Enum, Asm, ForwardClass, RawLine,
 }
 
 #[derive(Debug, Clone)]
@@ -309,6 +309,8 @@ pub enum CgDeclData {
     },
     Enum { members: Vec<(String, String)> },
     ForwardClass { names: Vec<String> },
+    /// A raw C line passed through verbatim (e.g. `#pragma mark - Foo`).
+    RawLine(String),
 }
 
 #[derive(Debug, Clone)]
@@ -2659,6 +2661,13 @@ fn convert_decl(ad: &AstDecl, class_infos: &std::collections::BTreeMap<String, C
             };
             result.push(CgDecl { kind: CgDeclKind::ForwardClass, name: String::new(), data: CgDeclData::ForwardClass { names }, attributes: Vec::new() });
         }
+        AstDeclKind::RawLine => {
+            let text = match &ad.data {
+                AstDeclData::RawLine(s) => s.clone(),
+                _ => String::new(),
+            };
+            result.push(CgDecl { kind: CgDeclKind::RawLine, name: String::new(), data: CgDeclData::RawLine(text), attributes: Vec::new() });
+        }
     }
     result
 }
@@ -3300,7 +3309,17 @@ pub fn ast_to_cg_unit(ast: &AstUnit, backend: Backend) -> CgUnit {
                 }
             }
 
+            // Pending raw pass-through lines (e.g. `#pragma mark`) seen since
+            // the previous method. They are flushed right before the next
+            // method's declaration so markers keep their source grouping.
+            let mut pending_pragmas: Vec<String> = Vec::new();
             for m in class_methods {
+                // Raw pass-through line (e.g. `#pragma mark`) between methods:
+                // defer it and attach to the next method.
+                if let AstDeclData::RawLine(text) = &m.data {
+                    pending_pragmas.push(text.clone());
+                    continue;
+                }
                 if let Some(ref mname) = m.name {
                     let sel = mname.clone();
                     add_sel(&mut selectors, &sel);
@@ -3316,6 +3335,22 @@ pub fn ast_to_cg_unit(ast: &AstUnit, backend: Backend) -> CgUnit {
                     };
 
                     let fn_name = format!("{}_{}", flat, sanitize_sel_name(&sel));
+
+                    // Flush any deferred `#pragma mark` markers so they appear
+                    // immediately before this method's declaration.
+                    if !pending_pragmas.is_empty() {
+                        let raw: Vec<CgDecl> = pending_pragmas.drain(..).map(|t| CgDecl {
+                            kind: CgDeclKind::RawLine, name: String::new(),
+                            data: CgDeclData::RawLine(t), attributes: Vec::new(),
+                        }).collect();
+                        if let Some(pos) = decls.iter().position(|d| d.name == fn_name) {
+                            for (k, r) in raw.into_iter().enumerate() {
+                                decls.insert(pos + k, r);
+                            }
+                        } else {
+                            decls.extend(raw);
+                        }
+                    }
 
                     let mut fn_params = Vec::new();
                     let self_type = if is_class { "NPClass *" } else { "NPObject *" };
@@ -5198,6 +5233,12 @@ fn emit_attrs_prefix(attrs: &[String], out: &mut String) {
 
 pub fn emit_decl(d: &CgDecl, out: &mut String) {
     match &d.data {
+        CgDeclData::RawLine(text) => {
+            // Raw pass-through line (e.g. `#pragma mark - Foo`): emit it
+            // verbatim at the position it appeared in the source.
+            out.push_str(text);
+            out.push('\n');
+        }
         CgDeclData::ForwardClass { names } => {
             // Forward declarations are emitted once at the top of the file
             // (see emit_unit_with_headers); skip here to avoid duplicates.

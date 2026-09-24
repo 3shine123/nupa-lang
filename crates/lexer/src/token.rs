@@ -11,6 +11,7 @@ pub enum TokenKind {
     Float,
     String,
     AtString,
+    AtNumber,
     Char,
     Bool,
 
@@ -104,6 +105,7 @@ pub enum KeywordKind {
     AtPrivate,
     AtDefs,
     AtNamespace,
+    AtEndNamespace,
     AtUsing,
     AtNoArc,
     AtReadwrite,
@@ -222,6 +224,7 @@ impl fmt::Display for TokenKind {
             TokenKind::Float => write!(f, "float"),
             TokenKind::String => write!(f, "string"),
             TokenKind::AtString => write!(f, "at-string"),
+            TokenKind::AtNumber => write!(f, "at-number"),
             TokenKind::Char => write!(f, "char"),
             TokenKind::Bool => write!(f, "bool"),
             TokenKind::Plus => write!(f, "'+'"),

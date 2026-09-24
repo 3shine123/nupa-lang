@@ -10,8 +10,8 @@
 // ============================================================================
 // 1. 命名空间「AI::Compute」：计算张量与核心矩阵
 // ============================================================================
-@namespace AI {
-    @namespace Compute {
+@namespace AI
+    @namespace Compute
         
         // 声明一个高阶的张量权重损失计算 Block，参数使用全称类型
         typedef int (^LossCalculatorBlock)(int rawWeight);
@@ -64,14 +64,14 @@
             return _matrixDim;
         }
         @end
-    }
-}
+    @endnamespace
+@endnamespace
 
 // ============================================================================
 // 2. 命名空间「Network::Pipeline」：神经网络架构与调度中心
 // ============================================================================
-@namespace Network {
-    @namespace Pipeline {
+@namespace Network
+    @namespace Pipeline
 
         @interface ModelDispatcher : NPObject {
             @public
@@ -122,8 +122,8 @@
             [super dealloc];
         }
         @end
-    }
-}
+    @endnamespace
+@endnamespace
 
 // ============================================================================
 // 3. 顶级作用域主入口：零导入全程回归压测

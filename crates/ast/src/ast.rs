@@ -210,7 +210,7 @@ pub struct AstAsmOperand {
 pub enum AstDeclKind {
     Class, Method, Ivar, Property,
     Function, Variable, Protocol,
-    Typedef, Struct, Union, Enum, Namespace, Asm,
+    Typedef, Struct, Union, Enum, Namespace, Asm, RawLine,
     ForwardClass,
 }
 
@@ -302,6 +302,8 @@ Ivar {
         clobbers: Vec<String>,
         labels: Vec<String>,
     },
+    /// A raw C line passed through verbatim (e.g. `#pragma mark - Foo`).
+    RawLine(String),
 }
 
 // ─── Translation unit ───────────────────────────────────────────────────────

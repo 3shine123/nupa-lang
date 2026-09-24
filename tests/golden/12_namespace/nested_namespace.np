@@ -2,8 +2,8 @@
 #include <stdio.h>
 #import <Foundation/Foundation.nh>
 
-@namespace Game {
-    @namespace Entities {
+@namespace Game
+    @namespace Entities
         @interface Player : NPObject {
             @public
             int id;
@@ -33,9 +33,9 @@
             return self;
         }
         @end
-    }
+    @endnamespace
 
-    @namespace Items {
+    @namespace Items
         @interface Potion : NPObject {
             @public
             int healAmount;
@@ -50,8 +50,8 @@
             return self;
         }
         @end
-    }
-}
+    @endnamespace
+@endnamespace
 
 int main() {
     @autoreleasepool {

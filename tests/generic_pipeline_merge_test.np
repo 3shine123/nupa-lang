@@ -10,7 +10,7 @@
 // 1. 命名空间 + 协议 + 隐式根类
 // ============================================================================
 
-@namespace Pipeline::Stage {
+@namespace Pipeline::Stage
 
     @protocol Processable
     - (int)processInput:(int)input;
@@ -52,13 +52,13 @@
         return input * _factor + _offset;
     }
     @end
-}
+@endnamespace
 
 // ============================================================================
 // 2. 泛型管道容器
 // ============================================================================
 
-@namespace Pipeline::Container {
+@namespace Pipeline::Container
 
     @interface Pipe<T> : NPObject {
         @public
@@ -94,7 +94,7 @@
         [super dealloc];
     }
     @end
-}
+@endnamespace
 
 // ============================================================================
 // 3. @using 别名

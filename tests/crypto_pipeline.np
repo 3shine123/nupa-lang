@@ -26,12 +26,12 @@
 // 3. Base Class 基类声明 (带有 Ivar 访问修饰符)
 // ==========================================================
 @interface UtilityBase : NPObject {
-@public
-    char *_utilityName;
-@protected
-    int _versionMajor;
-@private
-    int _securityToken;
+    @public
+        char *_utilityName;
+    @protected
+        int _versionMajor;
+    @private
+        int _securityToken;
 }
 @property char *utilityName;
 @property int versionMajor;

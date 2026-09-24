@@ -1,39 +1,42 @@
 #include <stdio.h>
-
 #import <Foundation/Foundation.nh>
 
-@interface Person : NPObject 
+@namespace Student
+    @interface Person : NPObject 
 
-- (void)speak;
+    - (void)speak;
 
-@end
+    @end
 
-@implementation Person
+    @implementation Person
 
-- (void)speak {
-    printf("Hello, world!\n");
-}
+    - (void)speak {
+        printf("Hello, Nupa world!\n");
+    }
 
-@end
+    @end
 
-@interface Student : Person
+    @interface Student : Person
 
-- (void)talk;
+    - (void)talk;
 
-@end
+    @end
 
-@implementation Student
+    @implementation Student
 
-- (void)talk {
-    [super speak];
-}
+    - (void)talk {
+        [super speak];
+    }
 
-@end
+    @end
+@endnamespace
 
 int main(int argc, const char * argv[]) {
     @autoreleasepool {
-        Student *s = [[Student alloc] init];
+        Student::Student *s = [[Student::Student alloc] init];
         [s talk];
+        NPArray *arr = [NPArray arrayWithObjects:@1, @2, @3, nil];
+        NPLog(@"Array: %@", arr);
     }
     return 0;
 }

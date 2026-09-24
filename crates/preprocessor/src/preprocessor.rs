@@ -280,8 +280,19 @@ fn resolve_source(
                     let orig = line.to_string();
                     c_out.push(orig.trim().to_string());
                 }
+            } else if trimmed.starts_with("#pragma mark") {
+                // `#pragma mark ...` is a purely cosmetic IDE marker (Xcode
+                // navigator). Keep it inline in the nupa stream so the parser
+                // carries it at its original position and codegen re-emits it
+                // there. Hoisting it into the C prelude would collect every
+                // marker at the top of the generated file. Other `#pragma`
+                // directives still go to the prelude (they typically must
+                // precede the code they affect).
+                poison_top_guard(cond_stack, c_out);
+                nupa_out.push_str(line);
+                nupa_out.push('\n');
             } else {
-                // #pragma, #warning, etc.
+                // #pragma (non-mark), #warning, etc.
                 poison_top_guard(cond_stack, c_out);
                 let orig = line.to_string();
                 c_out.push(orig.trim().to_string());

@@ -1,0 +1,7 @@
+#import <Fouondation/Foundation.nh>
+
+int main(int argc, const char * argv[]) {
+    @autoreleasepool {
+        
+    }
+}

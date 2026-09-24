@@ -2,7 +2,7 @@
 #include <stdio.h>
 #import <Foundation/Foundation.nh>
 
-@namespace Game {
+@namespace Game
     @interface Player : NPObject {
         @public
         int id;
@@ -32,7 +32,7 @@
         return self;
     }
     @end
-}
+@endnamespace
 
 @using namespace Game;
 

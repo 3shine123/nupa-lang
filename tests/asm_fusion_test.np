@@ -34,7 +34,7 @@ __attribute__((format(printf, 1, 2)))
 static void attr_printf(const char* fmt, ...) { printf(fmt); }
 
 // ---- @class 前向声明（真正未定义的前向类，codegen 需发射 struct 前向声明）----
-@namespace Net {
+@namespace Net
     @class RemoteNode;
     @interface Connector
     - (void)linkTo:(RemoteNode*)node;
@@ -42,7 +42,7 @@ static void attr_printf(const char* fmt, ...) { printf(fmt); }
     @implementation Connector
     - (void)linkTo:(RemoteNode*)node { printf("    [连接器] link to %p\n", node); }
     @end
-}
+@endnamespace
 
 // ---- 顶层协议 ----
 @protocol IChecksum
@@ -51,7 +51,7 @@ static void attr_printf(const char* fmt, ...) { printf(fmt); }
 @end
 
 // ============ 命名空间 + 协议实现 + 类继承 ============
-@namespace Kernel::Crypto {
+@namespace Kernel::Crypto
 
     @interface BlockHasher : NPObject <IChecksum> {
         @public
@@ -201,7 +201,7 @@ static void attr_printf(const char* fmt, ...) { printf(fmt); }
         [super dealloc];
     }
     @end
-}
+@endnamespace
 
 // @using 别名：泛型实例 + 短名导入
 @using CryptoQueue = Kernel::Crypto::TaskQueue<Kernel::Crypto::BlockHasher*>*;

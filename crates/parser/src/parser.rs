@@ -177,6 +177,7 @@ impl<'a> Parser<'a> {
                 match self.current.keyword {
                     KeywordKind::AtInterface | KeywordKind::AtImplementation |
                     KeywordKind::AtProtocol | KeywordKind::AtEnd |
+                    KeywordKind::AtEndNamespace |
                     KeywordKind::AtClass | KeywordKind::Return |
                     KeywordKind::If | KeywordKind::While | KeywordKind::For |
                     KeywordKind::Do | KeywordKind::Switch |
@@ -762,6 +763,37 @@ else if self.match_keyword(KeywordKind::Typeof) {
                 data: CstExprData::AtString(text),
             });
         }
+        // `@123` / `@1.5` — NPNumber boxing literal. Desugared to a normal
+        // class-method send `[NPNumber numberWithInt:123]` so all downstream
+        // resolution (binder/checker/codegen) reuses the message-send path.
+        if self.match_token(TokenKind::AtNumber) {
+            let text = self.previous_text().to_string();
+            let line = self.previous.line;
+            let col = self.previous.column;
+            let is_float = text.contains('.') || text.contains('e') || text.contains('E');
+            let number_expr = if is_float {
+                CstExpr {
+                    kind: CstExprKind::Float, expr_type: None, line, col,
+                    data: CstExprData::Float(text.parse::<f64>().unwrap_or(0.0)),
+                }
+            } else {
+                CstExpr {
+                    kind: CstExprKind::Integer, expr_type: None, line, col,
+                    data: CstExprData::Integer(text.trim_end_matches(|c: char| c == 'u' || c == 'U' || c == 'l' || c == 'L').parse::<i64>().unwrap_or(0)),
+                }
+            };
+            return Some(CstExpr {
+                kind: CstExprKind::MessageSend, expr_type: None, line, col,
+                data: CstExprData::Message {
+                    receiver: Box::new(CstExpr {
+                        kind: CstExprKind::Ident, expr_type: None, line, col,
+                        data: CstExprData::Ident("NPNumber".into()),
+                    }),
+                    selector: if is_float { "numberWithDouble:".into() } else { "numberWithInt:".into() },
+                    args: vec![number_expr],
+                },
+            });
+        }
         if self.match_token(TokenKind::Char) {
             return Some(CstExpr {
                 kind: CstExprKind::Char, expr_type: None,
@@ -785,6 +817,7 @@ else if self.match_keyword(KeywordKind::Typeof) {
                        KeywordKind::AtNoArc |
                       KeywordKind::AtPublic | KeywordKind::AtPackage | KeywordKind::AtProtected |
                       KeywordKind::AtPrivate | KeywordKind::AtDefs | KeywordKind::AtNamespace |
+                      KeywordKind::AtEndNamespace |
                       KeywordKind::AtUsing | KeywordKind::Self_ | KeywordKind::Super |
                       KeywordKind::Return | KeywordKind::If | KeywordKind::Else |
                       KeywordKind::Switch | KeywordKind::Case | KeywordKind::Default |
@@ -972,6 +1005,7 @@ else if self.match_keyword(KeywordKind::Typeof) {
                        KeywordKind::AtNoArc |
                       KeywordKind::AtPublic | KeywordKind::AtPackage | KeywordKind::AtProtected |
                       KeywordKind::AtPrivate | KeywordKind::AtDefs | KeywordKind::AtNamespace |
+                      KeywordKind::AtEndNamespace |
                       KeywordKind::AtUsing |
                       // Flow control / declaration keywords (never selectors)
                       KeywordKind::Return | KeywordKind::If | KeywordKind::Else |
@@ -1005,6 +1039,16 @@ else if self.match_keyword(KeywordKind::Typeof) {
                     if let Some(a) = arg {
                         args.push(a);
                     }
+                    // ObjC variadic call: `sel:a, b, c` — collect the
+                    // comma-separated arguments that belong to this same
+                    // selector part (terminated by `]`).
+                    while self.current.kind == TokenKind::Comma {
+                        self.advance();
+                        if self.current.kind == TokenKind::RBracket { break; }
+                        if let Some(a) = self.parse_assignment() {
+                            args.push(a);
+                        }
+                    }
                 } else if !args.is_empty() {
                     args.push(CstExpr {
                         kind: CstExprKind::Ident, expr_type: None,
@@ -1012,13 +1056,28 @@ else if self.match_keyword(KeywordKind::Typeof) {
                         data: CstExprData::Ident(part),
                     });
                 }
-                if self.current.kind == TokenKind::Comma && self.current.kind != TokenKind::RBracket {
-                    // Nope, commas don't separate message parts
-                    break;
-                }
             }
             // If no args were parsed, it's a zero-arg message
             self.consume(TokenKind::RBracket, "expected ']' after message send");
+
+            // Variadic Foundation collection constructor:
+            //   [NPArray arrayWithObjects:a, b, c, nil]  →  @[a, b, c]
+            // ObjC variadic methods don't exist in Nupa; the array literal
+            // already lowers to the `nupa_array_create` runtime helper, so
+            // desugar to it (dropping the trailing `nil` terminator).
+            let colon_count = selector.matches(':').count();
+            if colon_count > 0 && args.len() > colon_count && selector == "arrayWithObjects:" {
+                let mut elems = args;
+                if elems.last().map_or(false, |e| e.kind == CstExprKind::Nil) {
+                    elems.pop();
+                }
+                return Some(CstExpr {
+                    kind: CstExprKind::ArrayLit, expr_type: None,
+                    line: self.previous.line, col: self.previous.column,
+                    data: CstExprData::ArrayLit(elems),
+                });
+            }
+
             return Some(CstExpr {
                 kind: CstExprKind::MessageSend, expr_type: None,
                 line: self.previous.line, col: self.previous.column,
@@ -1874,6 +1933,12 @@ else if self.match_keyword(KeywordKind::Typeof) {
     }
 
     fn parse_statement(&mut self) -> Option<CstStmt> {
+        // `#pragma mark ...` pass-through — kept at its source position.
+        if self.current.kind == TokenKind::Keyword && self.current.keyword == KeywordKind::Pragma {
+            if let Some(d) = self.parse_raw_pragma_decl() {
+                return Some(CstStmt { kind: CstStmtKind::Decl, line: d.line, column: d.column, data: CstStmtData::Decl(d) });
+            }
+        }
         // Label: `ident:` at statement start (used by asm goto and plain C goto)
         if self.current.kind == TokenKind::Identifier {
             let after = self.current.start + self.current.length;
@@ -2435,6 +2500,29 @@ else if self.match_keyword(KeywordKind::Typeof) {
 })
     }
 
+    /// Parse a `#pragma mark ...` directive line as a raw pass-through
+    /// declaration. Consumes every token on the same source line and returns
+    /// the raw text so codegen can re-emit it at its original position.
+    fn parse_raw_pragma_decl(&mut self) -> Option<CstDecl> {
+        let line = self.current.line;
+        let column = self.current.column;
+        let start = self.current.start;
+        let mut end = start;
+        while !self.check(TokenKind::Eof) && self.current.line == line {
+            end = self.current.start + self.current.length.max(1);
+            self.advance();
+        }
+        let text = self.source.get(start..end).unwrap_or("").trim_end().to_string();
+        Some(CstDecl {
+            kind: CstDeclKind::RawLine,
+            line, column,
+            name: None,
+            next: None,
+            data: CstDeclData::RawLine(text),
+            attributes: Vec::new(),
+        })
+    }
+
     fn parse_declaration(&mut self) -> Option<CstDecl> {
         // Capture leading `__attribute__((...))` spellings before parsing the
         // declaration itself, so they travel through CST/AST to the C output.
@@ -2531,6 +2619,11 @@ else if self.match_keyword(KeywordKind::Typeof) {
                 data: CstDeclData::Asm { is_volatile, is_goto, template, outputs, inputs, clobbers, labels },
                             attributes: Vec::new(),
 });
+        }
+
+        // `#pragma mark ...` pass-through — kept at its source position.
+        if self.current.kind == TokenKind::Keyword && self.current.keyword == KeywordKind::Pragma {
+            return self.parse_raw_pragma_decl();
         }
 
         // @interface / @implementation / @protocol / @class / @namespace / @using
@@ -3429,6 +3522,10 @@ if self.current.kind == TokenKind::Identifier {
         let mut properties = Vec::new();
         let mut methods = Vec::new();
         while !self.match_keyword(KeywordKind::AtEnd) && !self.check(TokenKind::Eof) {
+            if self.current.kind == TokenKind::Keyword && self.current.keyword == KeywordKind::Pragma {
+                if let Some(p) = self.parse_raw_pragma_decl() { methods.push(p); }
+                continue;
+            }
             if self.match_keyword(KeywordKind::AtProperty) {
                 if let Some(prop) = self.parse_property() {
                     properties.push(prop);
@@ -3449,6 +3546,7 @@ if self.current.kind == TokenKind::Identifier {
                        KeywordKind::AtNoArc |
                       KeywordKind::AtPublic | KeywordKind::AtPackage | KeywordKind::AtProtected |
                       KeywordKind::AtPrivate | KeywordKind::AtDefs | KeywordKind::AtNamespace |
+                      KeywordKind::AtEndNamespace |
                       KeywordKind::AtUsing | KeywordKind::Self_ | KeywordKind::Super |
                       KeywordKind::Return | KeywordKind::If | KeywordKind::Else |
                       KeywordKind::Switch | KeywordKind::Case | KeywordKind::Default |
@@ -3564,6 +3662,10 @@ if self.current.kind == TokenKind::Identifier {
         let mut methods = Vec::new();
         let mut impl_vars = Vec::new();
         while !self.match_keyword(KeywordKind::AtEnd) && !self.check(TokenKind::Eof) {
+            if self.current.kind == TokenKind::Keyword && self.current.keyword == KeywordKind::Pragma {
+                if let Some(p) = self.parse_raw_pragma_decl() { methods.push(p); }
+                continue;
+            }
             if self.current.kind == TokenKind::Keyword &&
                (self.current.keyword == KeywordKind::AtProperty ||
                 self.current.keyword == KeywordKind::AtSynthesize ||
@@ -4014,22 +4116,21 @@ if self.current.kind == TokenKind::Identifier {
 
     fn parse_namespace(&mut self) -> Option<CstDecl> {
         self.advance(); // consume @namespace
-        // Namespace name may be qualified: `@namespace Core::Swarm { ... }`
+        // Namespace name may be qualified: `@namespace Core::Swarm … @endnamespace`
         let name = self.parse_qualified_name_with_keywords();
         let name = match name {
             Some(n) if !n.is_empty() => n,
             _ => { self.error("expected namespace name"); return None; }
         };
-        self.consume(TokenKind::LBrace, "expected '{' after @namespace name");
+        // `@namespace Name` … `@endnamespace` (empty namespace allowed).
         let mut decls = Vec::new();
-        while !self.check(TokenKind::RBrace) && !self.check(TokenKind::Eof) {
+        while !self.match_keyword(KeywordKind::AtEndNamespace) && !self.check(TokenKind::Eof) {
             if let Some(d) = self.parse_declaration() {
                 decls.push(d);
             } else {
                 self.advance();
             }
         }
-        self.consume(TokenKind::RBrace, "expected '}' after @namespace");
         Some(CstDecl {
             kind: CstDeclKind::Namespace,
             line: self.previous.line, column: self.previous.column,

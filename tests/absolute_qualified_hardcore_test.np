@@ -10,8 +10,8 @@
 // ============================================================================
 // 1. 命名空间「Engine::Math」：三维矢量运算节点
 // ============================================================================
-@namespace Engine {
-    @namespace Math {
+@namespace Engine
+    @namespace Math
         @interface Vector3D : NPObject {
             @public
             int x;
@@ -44,14 +44,14 @@
             z *= factor;
         }
         @end
-    }
-}
+    @endnamespace
+@endnamespace
 
 // ============================================================================
 // 2. 命名空间「Engine::Physics」：高维轨道碰撞检测
 // ============================================================================
-@namespace Engine {
-    @namespace Physics {
+@namespace Engine
+    @namespace Physics
         // 定义物理碰撞回调 Block，参数依然使用全称类型保证符号纯净
         typedef void (^CollisionEventBlock)(int impulse, Engine::Math::Vector3D* impactPoint);
 
@@ -101,14 +101,14 @@
             [super dealloc];
         }
         @end
-    }
-}
+    @endnamespace
+@endnamespace
 
 // ============================================================================
 // 3. 命名空间「Engine::Graphics」：经典渲染管线
 // ============================================================================
-@namespace Engine {
-    @namespace Graphics {
+@namespace Engine
+    @namespace Graphics
         @interface RenderNode : NPObject {
             @public
             const char* _nodeName;
@@ -142,14 +142,14 @@
             [super dealloc];
         }
         @end
-    }
-}
+    @endnamespace
+@endnamespace
 
 // ============================================================================
 // 4. 命名空间「Extension::Gameplay」：跨空间多态子类化与逻辑控制
 // ============================================================================
-@namespace Extension {
-    @namespace Gameplay {
+@namespace Extension
+    @namespace Gameplay
         // 【极限跨空间继承】：直接继承自「Engine::Graphics::RenderNode」
         @interface CombatUnit : Engine::Graphics::RenderNode {
             @public
@@ -195,8 +195,8 @@
             [super dealloc];
         }
         @end
-    }
-}
+    @endnamespace
+@endnamespace
 
 // ============================================================================
 // 5. 顶级作用域主程序：彻底消灭 @using 的纯粹全称大检阅

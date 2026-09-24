@@ -10,7 +10,7 @@
 // ============================================================================
 // 1. 命名空间一：Compiler::AST (抽象语法树节点树)
 // ============================================================================
-@namespace Compiler::AST {
+@namespace Compiler::AST
 
     // 协议：语法树可访问接口
     @protocol ASTVisitorProtocol
@@ -151,13 +151,13 @@
         [super dealloc];
     }
     @end
-}
+@endnamespace
 
 
 // ============================================================================
 // 2. 命名空间二：Compiler::Symbol (符号表与泛型哈希映射)
 // ============================================================================
-@namespace Compiler::Symbol {
+@namespace Compiler::Symbol
 
     // 🌟 泛型类：单态化符号表容器 SymbolMap<T>
     @interface SymbolMap <T> : NPObject {
@@ -214,7 +214,7 @@
         [super dealloc];
     }
     @end
-}
+@endnamespace
 
 
 // ============================================================================
@@ -235,7 +235,7 @@
 // ============================================================================
 // 4. 命名空间三：Compiler::Pipeline (优化管线与 Block 闭包)
 // ============================================================================
-@namespace Compiler::Pipeline {
+@namespace Compiler::Pipeline
 
     typedef void (^PassExecutionBlock)(Compiler::AST::ASTNode* targetAST);
 
@@ -270,7 +270,7 @@
         [super dealloc];
     }
     @end
-}
+@endnamespace
 
 
 // ============================================================================

@@ -3,16 +3,16 @@
 #include <stdio.h>
 #import <Foundation/Foundation.nh>
 
-@namespace Engine::Graphics {
+@namespace Engine::Graphics
     @interface Renderable
     - (int)layer;
     @end
     @implementation Renderable
     - (int)layer { return 7; }
     @end
-}
+@endnamespace
 
-@namespace Game {
+@namespace Game
     // @class 前向声明：codegen 必须为 Game::Player/Enemy 发射 struct 前向声明
     @class Player;
     @class Enemy;
@@ -25,9 +25,9 @@
     - (void)spawnPlayer:(Player *)player { printf("spawn player\n"); }
     - (void)spawnEnemy:(Enemy *)enemy { printf("spawn enemy\n"); }
     @end
-}
+@endnamespace
 
-@namespace UI {
+@namespace UI
     // 跨命名空间继承
     @interface HUD : Engine::Graphics::Renderable
     - (void)showPlayer:(Game::Player *)player;
@@ -35,7 +35,7 @@
     @implementation HUD
     - (void)showPlayer:(Game::Player *)player { printf("show player\n"); }
     @end
-}
+@endnamespace
 
 @using Game::Player;
 

@@ -220,6 +220,10 @@
       "patterns": [
         {
           "name": "keyword.other",
+          "match": "@endnamespace\\b"
+        },
+        {
+          "name": "keyword.other",
           "match": "@end\\b"
         }
       ]
@@ -342,16 +346,17 @@
       "patterns": [
         {
           "name": "meta.namespace.np",
-          "begin": "(@namespace)\\s+([A-Za-z_][A-Za-z0-9_]*)",
+          "begin": "(@namespace)\\s+([A-Za-z_][A-Za-z0-9_]*(?:::\\s*[A-Za-z_][A-Za-z0-9_]*)*)",
           "beginCaptures": {
             "1": { "name": "storage.type.namespace" },
             "2": { "name": "entity.name.type.namespace" }
           },
-          "end": "(\\{)",
+          "end": "(@endnamespace)\\b",
           "endCaptures": {
-            "1": { "name": "punctuation.section.block.begin" }
+            "1": { "name": "storage.type.namespace" }
           },
           "patterns": [
+            { "include": "$self" },
             { "include": "#comments" }
           ]
         }

@@ -59,7 +59,7 @@ unsigned soma_rotl(unsigned x, unsigned n) {
 
 // ================= @namespace + @interface（隐式根类） =================
 
-@namespace SomaCore {
+@namespace SomaCore
 
     @interface Calculator {
         int total;
@@ -130,14 +130,14 @@ unsigned soma_rotl(unsigned x, unsigned n) {
     }
 
     @end
-}
+@endnamespace
 
 // @protocol + @property + @synthesize + @public + instancetype
 @protocol IProcess
 - (int) run;
 @end
 
-@namespace SomaCore {
+@namespace SomaCore
 
     @interface SchedulerTask <IProcess> {
         @public
@@ -166,7 +166,7 @@ unsigned soma_rotl(unsigned x, unsigned n) {
         return id;
     }
     @end
-}
+@endnamespace
 
 // ================= C 可见入口 =================
 

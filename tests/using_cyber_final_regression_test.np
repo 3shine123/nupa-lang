@@ -10,8 +10,8 @@
 // ============================================================================
 // 1. 命名空间「Cyber::Security」：入侵载荷与核心数据
 // ============================================================================
-@namespace Cyber {
-    @namespace Security {
+@namespace Cyber
+    @namespace Security
         @interface IntrusionPayload : NPObject {
             @public
             int _threatLevel; // 威胁等级 1 - 100
@@ -47,14 +47,14 @@
             return self;
         }
         @end
-    }
-}
+    @endnamespace
+@endnamespace
 
 // ============================================================================
 // 2. 命名空间「Cyber::Infrastructure」：主机防御防火墙
 // ============================================================================
-@namespace Cyber {
-    @namespace Infrastructure {
+@namespace Cyber
+    @namespace Infrastructure
         // 声明入侵防护策略计算的高阶回调 Block
         typedef int (^MitigationFormulaBlock)(int rawThreat);
 
@@ -100,14 +100,14 @@
             return breachProbability;
         }
         @end
-    }
-}
+    @endnamespace
+@endnamespace
 
 // ============================================================================
 // 3. 命名空间「Cyber::Exploits」：黑客扩充攻击模组
 // ============================================================================
-@namespace Cyber {
-    @namespace Exploits {
+@namespace Cyber
+    @namespace Exploits
         @interface ProxyBypass : NPObject {
             @public
             const char* _proxyName;
@@ -143,8 +143,8 @@
             }
         }
         @end
-    }
-}
+    @endnamespace
+@endnamespace
 
 
 // ============================================================================

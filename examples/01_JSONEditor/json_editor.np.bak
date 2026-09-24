@@ -104,7 +104,7 @@ static int read_line(char *buf, int size) {
 // @implementations
 // ============================================================================
 
-@namespace JSON {
+@namespace JSON
 
     @implementation Error
         - (instancetype)initWithMessage:(const char *)msg {
@@ -322,13 +322,13 @@ static int read_line(char *buf, int size) {
         }
     @end
 
-} // @namespace JSON
+@endnamespace // @namespace JSON
 
 // ============================================================================
 // Parser — C helpers + implementation
 // ============================================================================
 
-@namespace JSON {
+@namespace JSON
 
     static void skip_ws(const char **p) {
         while (**p && (unsigned char)**p <= 0x20) (*p)++;
@@ -511,13 +511,13 @@ static int read_line(char *buf, int size) {
         }
     @end
 
-} // @namespace JSON
+@endnamespace // @namespace JSON
 
 // ============================================================================
 // Category + Editor
 // ============================================================================
 
-@namespace JSON {
+@namespace JSON
 
     @interface Object (Keys)
         - (void)printKeys;
@@ -876,7 +876,7 @@ static int read_line(char *buf, int size) {
         - (void)cmdQuit { printf("  Bye!\n"); _running = NO; }
     @end
 
-} // @namespace JSON
+@endnamespace // @namespace JSON
 
 // ============================================================================
 // 泛型 Buffer<T>

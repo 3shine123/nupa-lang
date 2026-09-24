@@ -12,7 +12,7 @@ static int nk_window_closing(struct uiWindow *w, void *data) {
     return 1;
 }
 
-@namespace LibUI {
+@namespace LibUI
 
     @implementation Window
     + (Window *)withTitle:(const char *)title width:(int)w height:(int)h {
@@ -126,4 +126,4 @@ static int nk_window_closing(struct uiWindow *w, void *data) {
     - (struct uiTab *)handle { return self->_handle; }
     @end
 
-} // @namespace LibUI
+@endnamespace // @namespace LibUI

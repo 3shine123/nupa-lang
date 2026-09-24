@@ -17,7 +17,7 @@ extern void kputc(char c);
 
 // ============ @namespace + @interface 链 ============
 
-@namespace Bio {
+@namespace Bio
 
     @protocol IWorker
     - (int) work:(int)hours;
@@ -100,7 +100,7 @@ extern void kputc(char c);
         return solution;
     }
     @end
-}
+@endnamespace
 
 // ============ @try 嵌套 + @selector + asm ============
 

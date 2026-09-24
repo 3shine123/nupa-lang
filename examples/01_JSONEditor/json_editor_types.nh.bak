@@ -1,7 +1,7 @@
 // json_editor_types.nh — Nupa 全特性 JSON 编辑器 · 类型声明
 #import <Foundation/Foundation.nh>
 
-@namespace JSON {
+@namespace JSON
 
     @protocol Value
         - (const char *)typeName;
@@ -89,7 +89,7 @@
         - (void)run;
     @end
 
-} // @namespace JSON
+@endnamespace // @namespace JSON
 
 @interface Buffer<T> : NPObject {
     T _storage[16]; int _count;

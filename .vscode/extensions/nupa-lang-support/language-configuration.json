@@ -30,8 +30,8 @@
     }
   },
   "indentationRules": {
-    "increaseIndentPattern": "^.*\\{[^}\"']*$|^.*\\([^)\"']*$",
-    "decreaseIndentPattern": "^\\s*(\\}|\\))"
+    "increaseIndentPattern": "^.*\\{[^}\"']*$|^.*\\([^)\"']*$|^\\s*@(namespace|interface|implementation|protocol)\\b.*$",
+    "decreaseIndentPattern": "^\\s*(\\}|\\)|@(end|endnamespace)\\b)"
   },
   "wordPattern": "(-?\\d*\\.\\d\\w*)|([^\\`\\~\\!\\@\\#\\%\\^\\&\\*\\(\\)\\=\\+\\{\\}\\\\\\|\\;\\:\\'\\\"\\,\\.\\<\\>\\/\\?\\s]+)"
 }

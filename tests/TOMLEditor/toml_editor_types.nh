@@ -11,7 +11,7 @@
 #include <time.h>
 #include <setjmp.h>
 
-@namespace TOML {
+@namespace TOML
 
     @protocol Value
     - (const char *)typeName;
@@ -108,7 +108,7 @@
     - (int)keyCount;
     @end
 
-} // @namespace TOML
+@endnamespace // @namespace TOML
 
 // 泛型 + Watcher（不在 namespace 内，全局可用）
 @interface Buffer<T> : NPObject {

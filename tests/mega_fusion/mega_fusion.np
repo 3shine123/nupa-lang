@@ -104,7 +104,7 @@ typedef struct {
 } Circle;
 
 // ============ 命名空间 + 类继承 + 协议实现 ============
-@namespace Mega::Fusion {
+@namespace Mega::Fusion
 
     // ---- 前向类声明 ----
     @class Calculator;
@@ -205,7 +205,7 @@ typedef struct {
     }
     @end
 
-} // namespace Mega::Fusion
+@endnamespace // namespace Mega::Fusion
 
 // ============ 顶层类（分类测试 + 属性语义） ============
 

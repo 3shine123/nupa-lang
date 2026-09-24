@@ -10,8 +10,8 @@
 // ============================================================================
 // 1. 命名空间「Engine::Core」：静态工厂与基础定义
 // ============================================================================
-@namespace Engine {
-    @namespace Core {
+@namespace Engine
+    @namespace Core
         
         // 声明一个高阶的火控阻尼计算 Block，参数使用全称
         typedef int (^WeaponModifierBlock)(int rawDamage);
@@ -64,14 +64,14 @@
             return _baseDamage;
         }
         @end
-    }
-}
+    @endnamespace
+@endnamespace
 
 // ============================================================================
 // 2. 命名空间「Universe::Space」：星际战舰与武器装配
 // ============================================================================
-@namespace Universe {
-    @namespace Space {
+@namespace Universe
+    @namespace Space
 
         @interface Cruiser : NPObject {
             @public
@@ -122,8 +122,8 @@
             [super dealloc];
         }
         @end
-    }
-}
+    @endnamespace
+@endnamespace
 
 // ============================================================================
 // 3. 顶级作用域主入口：零导入类方法终极实测

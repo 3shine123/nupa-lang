@@ -13,3 +13,5 @@
 #import "NPArray.np"
 #import "NPMutableArray.nh"
 #import "NPMutableArray.np"
+#import "NPNumber.nh"
+#import "NPNumber.np"

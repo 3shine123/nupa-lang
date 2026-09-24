@@ -87,7 +87,7 @@ pub enum CstDeclKind {
     CategoryInterface, CategoryImplementation,
     Protocol, ForwardClass, ForwardProtocol,
     Method, Property, Ivar, IvarList,
-    Namespace, Using, Asm,
+    Namespace, Using, Asm, RawLine,
 }
 
 // Parameter
@@ -370,6 +370,8 @@ pub enum CstDeclData {
         clobbers: Vec<String>,
         labels: Vec<String>,
     },
+    /// A raw C line passed through verbatim (e.g. `#pragma mark - Foo`).
+    RawLine(String),
 }
 
 // Translation unit

@@ -8,8 +8,8 @@
 #import <Foundation/Foundation.nh>
 
 // ============ 1. 命名空间「Engine::Math」：底层数学结构 ============
-@namespace Engine {
-    @namespace Math {
+@namespace Engine
+    @namespace Math
         @interface Vector2D : NPObject {
             @public
             int x;
@@ -32,12 +32,12 @@
             }
         }
         @end
-    }
-}
+    @endnamespace
+@endnamespace
 
 // ============ 2. 命名空间「Engine::Graphics」：核心渲染基类 ============
-@namespace Engine {
-    @namespace Graphics {
+@namespace Engine
+    @namespace Graphics
         @interface RenderNode : NPObject {
             @public
             const char* _nodeName;
@@ -73,11 +73,11 @@
             [super dealloc];
         }
         @end
-    }
-}
+    @endnamespace
+@endnamespace
 
 // ============ 3. 命名空间「Extension」：跨空间的深层子类化 ============
-@namespace Extension {
+@namespace Extension
     // 声明一个高阶回调 Block，使用全称类型
     typedef void (^ActionCompleteBlock)(int frameCount, Engine::Math::Vector2D* finalPos);
 
@@ -123,10 +123,10 @@
                _textureId, _nodeName, _position->x, _position->y);
     }
     @end
-}
+@endnamespace
 
 // ============ 4. 命名空间「Gameplay」：核心游戏循环与控制器 ============
-@namespace Gameplay {
+@namespace Gameplay
     @interface GameManager : NPObject {
         @public
         // 容器内部同样直接使用全称类型
@@ -156,7 +156,7 @@
         }
     }
     @end
-}
+@endnamespace
 
 
 // ============ 5. 顶级作用域主入口 ============

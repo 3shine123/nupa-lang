@@ -7,8 +7,8 @@
 
 // ============ 1. 多层嵌套命名空间定义 ============
 
-@namespace Engine {
-    @namespace Core {
+@namespace Engine
+    @namespace Core
         @interface Transform : NPObject {
             @public
             int x;
@@ -32,9 +32,9 @@
             y += dy;
         }
         @end
-    }
+    @endnamespace
 
-    @namespace Physics {
+    @namespace Physics
         // 声明一个带有 Block 回调的物理碰撞器
         typedef void (^CollisionCallback)(int impactVelocity);
 
@@ -62,10 +62,10 @@
             }
         }
         @end
-    }
-}
+    @endnamespace
+@endnamespace
 
-@namespace Render {
+@namespace Render
     @interface Sprite : NPObject {
         @public
         const char* textureName;
@@ -86,7 +86,7 @@
         printf("[渲染器] 在坐标 (%d, %d) 绘制贴图: %s\n", x, y, textureName);
     }
     @end
-}
+@endnamespace
 
 
 // ============ 2. 核心逻辑与 @using 语法混合测试 ============
