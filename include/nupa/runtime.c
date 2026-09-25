@@ -5,7 +5,7 @@
 
 // ─── NUPA_CLASS_$_nupa_root (defined weak; codegen's nupa_metaInit fills it) ──
 
-NPClass NUPA_CLASS_$_nupa_root;
+__attribute__((weak)) NPClass NUPA_CLASS_$_nupa_root;
 
 // ─── Exception globals ────────────────────────────────────────────────────────
 

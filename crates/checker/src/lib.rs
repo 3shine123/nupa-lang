@@ -9,6 +9,9 @@ pub struct Checker {
     pub symtab: Option<SymbolTable>,
     pub current_class: Option<String>,
     pub current_method: Option<String>,
+    /// True while checking the body of a class method (`+`). In a class method
+    /// `self` is the class object (NPClass *), so instance ivars can't be used.
+    pub current_method_is_class: bool,
     pub has_error: bool,
     pub error_count: i32,
     pub error_msg: String,
@@ -34,6 +37,7 @@ impl Checker {
             symtab,
             current_class: None,
             current_method: None,
+            current_method_is_class: false,
             has_error: false,
             error_count: 0,
             error_msg: String::new(),
@@ -326,8 +330,18 @@ AstExprData::Subscript { object, key, .. } => {
                     self.check_expr(&mut e)
                 })
             }
-            AstExprData::IvarRef { obj, .. } => {
+            AstExprData::IvarRef { obj, ivar, .. } => {
                 self.check_expr(&mut *obj);
+                // Instance variables cannot be used in class methods (`+`): `self`
+                // there is the class object (NPClass *), not an instance. Mirrors
+                // ObjC's "instance variable '_x' accessed in class method".
+                if self.current_method_is_class
+                    && matches!(&obj.data, AstExprData::VarRef { name, .. } if name == "self")
+                {
+                    let ivn = ivar.clone().unwrap_or_else(|| "?".to_string());
+                    self.check_error(e.line, e.col, &format!(
+                        "instance variable '{}' accessed in class method (self is the class, not an instance)", ivn));
+                }
                 Some(AstType::new(TypePrim::Int))
             }
             AstExprData::PropRef { obj, .. } => {
@@ -482,13 +496,16 @@ AstExprData::Subscript { object, key, .. } => {
                 for m in methods { self.check_decl(m); }
                 self.current_class = old;
             }
-            AstDeclData::Method { body, params, .. } => {
+            AstDeclData::Method { body, params, is_class_method, .. } => {
                 if let Some(ref mut b) = body {
                     let old = self.current_method.clone();
+                    let old_is_class = self.current_method_is_class;
                     self.current_method = d.name.clone();
+                    self.current_method_is_class = *is_class_method;
                     self.add_params_to_scope(params);
                     self.check_stmt(b);
                     self.current_method = old;
+                    self.current_method_is_class = old_is_class;
                 }
             }
             _ => {}
@@ -509,5 +526,57 @@ AstExprData::Subscript { object, key, .. } => {
 
     pub fn warnings(&self) -> &[String] {
         &self.warnings
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Build `self->_x` (an instance-ivar access via self).
+    fn self_ivar_expr() -> AstExpr {
+        AstExpr {
+            kind: AstExprKind::IvarRef, expr_type: None, line: 1, col: 1,
+            data: AstExprData::IvarRef {
+                ivar: Some("_x".into()),
+                cls: Some("Foo".into()),
+                obj: Box::new(AstExpr {
+                    kind: AstExprKind::Self_, expr_type: None, line: 1, col: 1,
+                    data: AstExprData::VarRef { sym: None, name: "self".into() },
+                }),
+            },
+        }
+    }
+
+    /// Check a one-statement method body `_x;` and return the checker result.
+    fn check_method(is_class_method: bool) -> i32 {
+        let body = AstStmt {
+            kind: AstStmtKind::Expr, line: 1, col: 1,
+            data: AstStmtData::Expr(self_ivar_expr()),
+        };
+        let method = AstDecl {
+            kind: AstDeclKind::Method, name: Some("foo".into()), line: 1, col: 1,
+            data: AstDeclData::Method {
+                method_sym: None, is_class_method,
+                return_type: None, params: None,
+                body: Some(Box::new(body)),
+            },
+            attributes: Vec::new(),
+        };
+        let mut unit = AstUnit { decls: vec![method], filename: String::new() };
+        let mut c = Checker::new(None);
+        c.check(&mut unit)
+    }
+
+    #[test]
+    fn class_method_ivar_access_is_error() {
+        assert_eq!(check_method(true), -1,
+            "class method ('+') must not access instance ivars (self is the class)");
+    }
+
+    #[test]
+    fn instance_method_ivar_access_is_ok() {
+        assert_eq!(check_method(false), 0,
+            "instance method ('-') may access instance ivars");
     }
 }
