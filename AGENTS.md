@@ -476,13 +476,19 @@ nupa-lang/
 - ✅ Archives: `nupa-x86_64-unknown-freebsd.tar.gz`, `nupa-i686-unknown-freebsd.tar.gz`, `nupa-x86_64-unknown-netbsd.tar.gz`
 
 ### Windows Cross-Compilation — Implemented ✅ (Aug 2026)
-- ✅ `build-all.sh` now targets **9 platforms**: added `x86_64-pc-windows-gnu` (Windows x86_64, MinGW).
+- ✅ `build-all.sh` **新增 `x86_64-pc-windows-gnu`** 目标（`TARGETS` 现为 8 项）。
 - ✅ **构建工具**：Windows 目标用 **`cargo zigbuild`**（`cargo install cargo-zigbuild`）——手动 `cargo build` + zig 作 linker 会因 rustc 末尾的 `-nodefaultlibs` 让 zig 丢掉自带 MinGW 库搜索路径，报 `unable to find dynamic system library 'msvcrt'`；`cargo-zigbuild` 正确处理了这些库路径。找不到 `cargo-zigbuild` 时 `build-all.sh` 会**跳过** Windows 目标并提示。
 - ✅ `zig-cc.sh` 增加映射：`x86_64-pc-windows-gnu` → `x86_64-windows-gnu`（zig 不认 rust triple 的 `pc` vendor），供 `cc` crate 编译 `runtime.c` 用（产出 COFF `.o`）。
 - ✅ 打包：Windows 产物为 **`.zip`**（`nupa-x86_64-pc-windows-gnu.zip`），内含 `nupac.exe` + `libnupa.a`(COFF/GNU ar) + `include/` + `completions/` + `install.sh`。
 - ✅ 验证：`build-all.sh` 全量跑通 8 个 host/交叉目标，Windows 产出 `PE32+ executable (console) x86-64, for MS Windows`。
 - ⚠️ 仍待办：Windows 端 `nupac.exe` **运行时**用 `zig cc` 编译用户程序（`select_c_compiler` 已按 `cfg!(windows)` 默认 `zig cc`），但需在真实 Windows / Wine 上验证；`runtime.c` 的 `__thread` 在 zig cc 下没问题（运行时仍是普通全局语义待确认）；Windows 原生安装建议改 PowerShell `install.ps1`（现 bundle 里仍是 bash `install.sh`）。
 - ✅ **`install-pkg.sh` → `install.sh`**：仓库脚本重命名；`build-all.sh` 里 `cp install-pkg.sh …` 改为 `cp install.sh …`，`crates/nupac/build.rs` 也改找 `install.sh`。
+- ✅ **`install.ps1`（PowerShell 安装脚本）**：Windows 原生安装器。
+  - **安装位置**（遵循 Windows 惯例，与 VS Code 用户安装 / Python 等一致）：默认**用户级** `%LOCALAPPDATA%\Programs\nupac`（无需管理员）；`-System` → `%ProgramFiles%\nupac`（需管理员）；`-Prefix <dir>` 自定义。（若走包管理器：scoop → `%USERPROFILE%\scoop\apps\nupac\current`，choco → `C:\ProgramData\chocolatey\lib\nupac`。）
+  - **布局**（对齐 Unix 的 `bin/ lib/ include/ share/`）：`<prefix>\bin\nupac.exe`、`<prefix>\lib\libnupa.a`、`<prefix>\include\{nupa,Foundation}\`、`<prefix>\share\nupac\completions\nupac.ps1`。
+  - `nupac.exe` 靠 `resolve_bundle_root()` 从 `bin\nupac.exe` 的父目录 `..` 找到 `include\nupa\runtime.h` → 即 `<prefix>`；install.ps1 另设 `NUPA_HOME=<prefix>` 双保险。
+  - 自动把 `<prefix>\bin` 加入 **用户 PATH**（`[Environment]::SetEnvironmentVariable('Path', …, 'User')`，幂等）；用 `nupac.exe --gen-completions powershell` 生成补全并写入 PowerShell 用户 profile（带 marker，幂等）。
+  - bundle 同时含 `install.sh`（MSYS/WSL/Git-Bash 用）与 `install.ps1`（原生 PowerShell 用）。`build-all.sh`/`build.rs` 均拷贝两者。
 
 ### Fixes Applied (Current Session — Aug 2026)
 - ✅ **错误分阶段前缀**：pipeline 各阶段 fail-fast 返回的错误消息改为 `Parse failed:\n[parser] line:col: msg` / `Binding failed:\n[binder] ...` / `Elaboration failed:\n[elaborator] ...` / `Type checking failed:\n[checker] ...`。`prefix_lines(stage, msg)` 给多行错误逐行加 `[stage]` 前缀（空行跳过），一条编译错误即可按 parser/binder/checker 分门别类阅读。见 `crates/nupac/src/pipeline.rs`。

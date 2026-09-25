@@ -140,6 +140,8 @@ for t in "${TARGETS[@]}"; do
     # 拷贝 install.sh
     cp install.sh "$out/install.sh"
     chmod +x "$out/install.sh"
+    # 拷贝 Windows PowerShell 安装脚本
+    cp install.ps1 "$out/install.ps1"
     # 拷贝 shell 补全脚本
     mkdir -p "$out/completions"
     cp -r completions/. "$out/completions/"
@@ -202,6 +204,7 @@ for t in "${TARGETS[@]}"; do
     fi
     cp "$out/install.sh" "$staging/"
     chmod +x "$staging/install.sh"
+    cp "$out/install.ps1" "$staging/"
     [ -f "$out/libnupa.a" ] && cp "$out/libnupa.a" "$staging/"
     cp -r "$out/include" "$staging/include"
     [ -d "$out/completions" ] && cp -r "$out/completions" "$staging/completions"

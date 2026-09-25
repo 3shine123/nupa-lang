@@ -77,11 +77,16 @@ fn main() {
     let _ = std::fs::create_dir_all(&target_dir);
     let _ = std::fs::copy(&built, target_dir.join("libnupa.a"));
 
-    // 拷贝 install.sh + 头文件到构建输出目录（与 nupac 同层，方便本地安装）
+    // 拷贝 install.sh + install.ps1 + 头文件到构建输出目录（与 nupac 同层，方便本地安装）
     let install_src = if std::path::Path::new("../../install.sh").exists() {
         PathBuf::from("../../install.sh")
     } else {
         PathBuf::from("../install.sh")
+    };
+    let install_ps1_src = if std::path::Path::new("../../install.ps1").exists() {
+        PathBuf::from("../../install.ps1")
+    } else {
+        PathBuf::from("../install.ps1")
     };
     let include_src = if std::path::Path::new("../../include").is_dir() {
         PathBuf::from("../../include")
@@ -96,6 +101,9 @@ fn main() {
     if install_src.exists() && include_src.exists() {
         let _ = fs::create_dir_all(&target_dir);
         let _ = fs::copy(&install_src, target_dir.join("install.sh"));
+        if install_ps1_src.exists() {
+            let _ = fs::copy(&install_ps1_src, target_dir.join("install.ps1"));
+        }
         let _ = copy_dir_all(&include_src, &target_dir.join("include"));
         if completions_src.is_dir() {
             let _ = copy_dir_all(&completions_src, &target_dir.join("completions"));
@@ -107,6 +115,7 @@ fn main() {
         }
     }
     println!("cargo:rerun-if-changed={}", install_src.to_string_lossy());
+    println!("cargo:rerun-if-changed={}", install_ps1_src.to_string_lossy());
     emit_rerun_for_dir(&include_src);
     if completions_src.is_dir() {
         emit_rerun_for_dir(&completions_src);
