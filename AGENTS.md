@@ -475,6 +475,15 @@ nupa-lang/
 - ✅ All 3 BSD binaries verified: `file` shows correct ELF format for FreeBSD 14.0 / NetBSD 10.1
 - ✅ Archives: `nupa-x86_64-unknown-freebsd.tar.gz`, `nupa-i686-unknown-freebsd.tar.gz`, `nupa-x86_64-unknown-netbsd.tar.gz`
 
+### Windows Cross-Compilation — Implemented ✅ (Aug 2026)
+- ✅ `build-all.sh` now targets **9 platforms**: added `x86_64-pc-windows-gnu` (Windows x86_64, MinGW).
+- ✅ **构建工具**：Windows 目标用 **`cargo zigbuild`**（`cargo install cargo-zigbuild`）——手动 `cargo build` + zig 作 linker 会因 rustc 末尾的 `-nodefaultlibs` 让 zig 丢掉自带 MinGW 库搜索路径，报 `unable to find dynamic system library 'msvcrt'`；`cargo-zigbuild` 正确处理了这些库路径。找不到 `cargo-zigbuild` 时 `build-all.sh` 会**跳过** Windows 目标并提示。
+- ✅ `zig-cc.sh` 增加映射：`x86_64-pc-windows-gnu` → `x86_64-windows-gnu`（zig 不认 rust triple 的 `pc` vendor），供 `cc` crate 编译 `runtime.c` 用（产出 COFF `.o`）。
+- ✅ 打包：Windows 产物为 **`.zip`**（`nupa-x86_64-pc-windows-gnu.zip`），内含 `nupac.exe` + `libnupa.a`(COFF/GNU ar) + `include/` + `completions/` + `install.sh`。
+- ✅ 验证：`build-all.sh` 全量跑通 8 个 host/交叉目标，Windows 产出 `PE32+ executable (console) x86-64, for MS Windows`。
+- ⚠️ 仍待办：Windows 端 `nupac.exe` **运行时**用 `zig cc` 编译用户程序（`select_c_compiler` 已按 `cfg!(windows)` 默认 `zig cc`），但需在真实 Windows / Wine 上验证；`runtime.c` 的 `__thread` 在 zig cc 下没问题（运行时仍是普通全局语义待确认）；Windows 原生安装建议改 PowerShell `install.ps1`（现 bundle 里仍是 bash `install.sh`）。
+- ✅ **`install-pkg.sh` → `install.sh`**：仓库脚本重命名；`build-all.sh` 里 `cp install-pkg.sh …` 改为 `cp install.sh …`，`crates/nupac/build.rs` 也改找 `install.sh`。
+
 ### Fixes Applied (Current Session — Aug 2026)
 - ✅ **错误分阶段前缀**：pipeline 各阶段 fail-fast 返回的错误消息改为 `Parse failed:\n[parser] line:col: msg` / `Binding failed:\n[binder] ...` / `Elaboration failed:\n[elaborator] ...` / `Type checking failed:\n[checker] ...`。`prefix_lines(stage, msg)` 给多行错误逐行加 `[stage]` 前缀（空行跳过），一条编译错误即可按 parser/binder/checker 分门别类阅读。见 `crates/nupac/src/pipeline.rs`。
 - ✅ **`__typeof__` 作为内建函数实参**：`is_builtin_type_arg_start` 增加 `KeywordKind::Typeof`，使 `__builtin_types_compatible_p(__typeof__(x), int)` 的 `__typeof__(x)` 被 `parse_type_full` 解析为 TypeLiteral（原先报 `expected ')' after args (got keyword)`）。见 `crates/parser/src/parser.rs`。

@@ -17,6 +17,8 @@ for a in "$@"; do
                 x86_64-unknown-freebsd)     ZIG_TARGET="x86_64-freebsd-none" ;;
                 i686-unknown-freebsd)       ZIG_TARGET="x86-freebsd-none" ;;
                 x86_64-unknown-netbsd)      ZIG_TARGET="x86_64-netbsd-none" ;;
+                x86_64-pc-windows-gnu)      ZIG_TARGET="x86_64-windows-gnu" ;;
+                i686-pc-windows-gnu)        ZIG_TARGET="x86-windows-gnu" ;;
                 *) ZIG_TARGET="$t" ;;
             esac
             ;;

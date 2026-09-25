@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# build-all.sh — 一键交叉编译 nupac 到 7 个目标平台
+# build-all.sh — 一键交叉编译 nupac 到 8 个目标平台
 # 依赖：zig 0.14+（brew install zig），
-#       rustup 管理的 Rust
+#       rustup 管理的 Rust，
+#       Windows 目标另需 cargo-zigbuild（cargo install cargo-zigbuild）
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -29,6 +30,7 @@ TARGETS=(
     "x86_64-unknown-freebsd"    # FreeBSD x86_64
     "i686-unknown-freebsd"      # FreeBSD x86
     "x86_64-unknown-netbsd"     # NetBSD x86_64
+    "x86_64-pc-windows-gnu"     # Windows x86_64 (MinGW, via cargo-zigbuild)
 )
 
 # ── 确保所有 target 已安装 ──
@@ -103,6 +105,18 @@ for t in "${TARGETS[@]}"; do
             RUSTFLAGS="-C link-arg=-Wl,--allow-shlib-undefined -C link-arg=-L$(pwd)/$_stubdir" \
                 cargo build --release --target "$t" $CARGO_JOBS 2>&1 | tail -3
             ;;
+        x86_64-pc-windows-gnu)
+            # Windows: 用 cargo-zigbuild（zig cc 作为 linker，自带 MinGW libc）。
+            if ! command -v cargo-zigbuild >/dev/null 2>&1; then
+                echo "  ⚠️  跳过 $t：未找到 cargo-zigbuild（请先 cargo install cargo-zigbuild）" >&2
+                continue
+            fi
+            CC_ENV="CC_$(echo "$t" | tr '[:upper:]-' '[:lower:]_' | sed 's/\./_/g' | tr '-' '_')"
+            export "$CC_ENV=$ZIG_CC"
+            AR_ENV="AR_$(echo "$t" | tr '[:upper:]-' '[:lower:]_' | sed 's/\./_/g' | tr '-' '_')"
+            export "$AR_ENV=$ZIG_AR"
+            cargo zigbuild --release --target "$t" $CARGO_JOBS 2>&1 | tail -3
+            ;;
         *)
             CC_ENV="CC_$(echo "$t" | tr '[:upper:]-' '[:lower:]_' | sed 's/\./_/g' | tr '-' '_')"
             export "$CC_ENV=$ZIG_CC"
@@ -124,7 +138,7 @@ for t in "${TARGETS[@]}"; do
     mkdir -p "$out/include"
     cp -r include/. "$out/include/"
     # 拷贝 install.sh
-    cp install-pkg.sh "$out/install.sh"
+    cp install.sh "$out/install.sh"
     chmod +x "$out/install.sh"
     # 拷贝 shell 补全脚本
     mkdir -p "$out/completions"
@@ -137,6 +151,7 @@ echo "========== Build artifacts =========="
 for t in "${TARGETS[@]}"; do
     case "$t" in
         aarch64-apple-darwin)  bin="target/release/nupac" ;;  # 宿主目标
+        x86_64-pc-windows-gnu) bin="target/$t/release/nupac.exe" ;;
         *) bin="target/$t/release/nupac" ;;
     esac
     [ -f "$bin" ] && echo "$(ls -lh "$bin" | awk '{print $5}')  $bin" && file "$bin" | sed 's/.*: //' && echo ""
@@ -161,6 +176,7 @@ pack_name() {
         x86_64-unknown-freebsd)     echo "nupa-x86_64-unknown-freebsd" ;;
         i686-unknown-freebsd)       echo "nupa-i686-unknown-freebsd" ;;
         x86_64-unknown-netbsd)      echo "nupa-x86_64-unknown-netbsd" ;;
+        x86_64-pc-windows-gnu)      echo "nupa-x86_64-pc-windows-gnu" ;;
         *) echo "nupa-$1" ;;
     esac
 }
@@ -169,16 +185,21 @@ echo ""
 echo "========== Packing into target/ =========="
 for t in "${TARGETS[@]}"; do
     name="$(pack_name "$t")"
-    exe=0
     case "$t" in
         aarch64-apple-darwin) out="target/release" ;;
         *) out="target/$t/release" ;;
     esac
+    is_win=0
+    case "$t" in x86_64-pc-windows-gnu) is_win=1 ;; esac
     staging="target/pack/$name"
     rm -rf "$staging"
     mkdir -p "$staging"
     # 只打包必要内容：二进制 + install.sh + 静态库 + 头文件 + 补全脚本
-    cp "$out/nupac" "$staging/nupac"
+    if [ "$is_win" = 1 ]; then
+        cp "$out/nupac.exe" "$staging/nupac.exe"
+    else
+        cp "$out/nupac" "$staging/nupac"
+    fi
     cp "$out/install.sh" "$staging/"
     chmod +x "$staging/install.sh"
     [ -f "$out/libnupa.a" ] && cp "$out/libnupa.a" "$staging/"
@@ -186,9 +207,16 @@ for t in "${TARGETS[@]}"; do
     [ -d "$out/completions" ] && cp -r "$out/completions" "$staging/completions"
     find "$staging" -name ".DS_Store" -delete
 
-    # Unix → tar.gz
-    arch_path="target/${name}.tar.gz"
-    tar -C target/pack -czf "$arch_path" "$name"
+    if [ "$is_win" = 1 ]; then
+        # Windows → .zip
+        arch_path="target/${name}.zip"
+        rm -f "$arch_path"
+        ( cd target/pack && zip -qr "../${name}.zip" "$name" )
+    else
+        # Unix → tar.gz
+        arch_path="target/${name}.tar.gz"
+        tar -C target/pack -czf "$arch_path" "$name"
+    fi
     echo "  $(ls -lh "$arch_path" | awk '{print $5}')  $arch_path"
     rm -rf "$staging"
 done
