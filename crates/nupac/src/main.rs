@@ -114,8 +114,8 @@ fn clap_command() -> ClapCommand {
             .help("loop iterations simulated in the refcount trace (default 2)"))
         .arg(Arg::new("trace-no-color").long("trace-no-color")
             .help("disable colors in the refcount trace"))
-        .arg(Arg::new("backend").long("backend").value_name("PORTABLE|CLANG|GCC")
-            .help("C compiler backend (portable, clang, gcc)"))
+        .arg(Arg::new("backend").long("backend").value_name("CLANG|PORTABLE|GCC")
+            .help("C compiler backend (clang is the default)"))
         .arg(Arg::new("output").short('o').value_name("PATH")
             .help("output path (binary or .c)"))
         .arg(Arg::new("include").short('I').value_name("DIR")
@@ -356,7 +356,7 @@ fn nupac_flags() -> (Vec<(&'static str, &'static str)>, Vec<(&'static str, &'sta
         ("-trace-refcount", "print a static reference-count trace (no codegen)"),
         ("-trace-max-iters", "loop iterations in the refcount trace (default 2)"),
         ("-trace-no-color", "disable colors in the refcount trace"),
-        ("-backend",      "C compiler backend (portable, clang, gcc)"),
+        ("-backend",      "C compiler backend (clang, portable, gcc)"),
         ("-v",            "verbose transpilation"),
         ("-o",            "output path (binary or .c)"),
         ("-I",            "add include dir"),
@@ -569,9 +569,9 @@ fn main() {
         println!("  -no-comments                         Omit the readability comments in the");
         println!("                                     generated C code (comments are on by");
         println!("                                     default).");
-        println!("  -backend <mode>                      C compiler backend (portable, clang, gcc)");
-        println!("                                     Default: portable (gcc + clang compatible)");
-        println!("                                     clang: allow clang-specific __attribute__");
+        println!("  -backend <mode>                      C compiler backend (clang, portable, gcc)");
+        println!("                                     Default: clang");
+        println!("                                     portable: only gcc+clang common attributes");
         println!("                                     gcc:   allow gcc-specific __attribute__");
         println!();
         println!("Type Checking Options:");
@@ -710,7 +710,7 @@ let mut trace_refcount = false;
             match val {
                 Some(b) => { backend = Some(b); i += adv; }
                 None => {
-                    eprintln!("error: -backend requires a mode (portable, clang, or gcc)");
+                    eprintln!("error: -backend requires a mode (clang, portable, or gcc)");
                     std::process::exit(1);
                 }
             }
@@ -784,7 +784,7 @@ let mut trace_refcount = false;
         match attrs::Backend::parse(b) {
             Some(be) => pipeline.backend = be,
             None => {
-                eprintln!("error: unknown backend '{}' (try portable, clang, or gcc)", b);
+                eprintln!("error: unknown backend '{}' (try clang, portable, or gcc)", b);
                 std::process::exit(1);
             }
         }

@@ -314,11 +314,11 @@ int my_log(const char *fmt, ...);
 
 编译器内置了一个 **590 个属性的三分类表**（来源：Clang 和 GCC 官方文档）。`-backend` 选项控制允许使用哪些属性：
 
-| 选项                      | 行为                                                          |
+| 选项                        | 行为                                                          |
 | ----------------------- | ----------------------------------------------------------- |
-| `-backend=portable`（默认） | 只允许 gcc 和 clang 都支持的属性，其余报错                                 |
-| `-backend=clang`        | 允许 clang 专属属性（如 `availability`、`diagnose_if`、`objc_direct`） |
-| `-backend=gcc`          | 允许 gcc 专属属性（如 `strub`、`optimize`、`stack_protect`）           |
+| `-backend=clang`（默认）    | 允许 clang 专属属性（如 `availability`、`diagnose_if`、`objc_direct`）；gcc 专属属性报错 |
+| `-backend=portable`     | 只允许 gcc 和 clang 都支持的属性，其余报错                                 |
+| `-backend=gcc`          | 允许 gcc 专属属性（如 `strub`、`optimize`、`stack_protect`）               |
 
 不在表中的未知属性只产生 warning 并透传，绝不会报错。
 
@@ -754,7 +754,7 @@ nupac [options] <input.np>
   -fno-nupa-arc     禁用 ARC（手动 MRC 模式）
   -fno-checker      跳过类型检查
   -fno-libc         裸机/freestanding 输出（无 libc、无 TLS）
-  -backend <mode>   C 编译器后端：portable（默认）、clang、gcc
+  -backend <mode>   C 编译器后端：clang（默认）、portable、gcc
   -arch <target>    构建目标架构（如 -arch x86_64）
   -asm <file.s>     链接汇编文件（可重复）
   -gen-completions <shell>  生成 shell 补全脚本（zsh|bash|fish）

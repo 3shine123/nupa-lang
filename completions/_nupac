@@ -18,7 +18,7 @@ _nupac() {
                 '-trace-refcount[print a static reference-count trace (no codegen)]' \
                 '-trace-max-iters[loop iterations in the refcount trace (default 2)]' \
                 '-trace-no-color[disable colors in the refcount trace]' \
-                '-backend[C compiler backend (portable, clang, gcc)]' \
+                '-backend[C compiler backend (clang is the default)]' \
                 '-o[output path (binary or .c)]' \
                 '-I[add include dir]' \
                 '-L[add lib dir]' \

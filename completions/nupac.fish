@@ -35,7 +35,7 @@ complete -c nupac -n "__fish_nupac_needs_command" -l no-comments -d 'omit readab
 complete -c nupac -n "__fish_nupac_needs_command" -l trace-refcount -d 'print a static reference-count trace (no codegen)' -r
 complete -c nupac -n "__fish_nupac_needs_command" -l trace-max-iters -d 'loop iterations simulated in the refcount trace (default 2)' -r
 complete -c nupac -n "__fish_nupac_needs_command" -l trace-no-color -d 'disable colors in the refcount trace' -r
-complete -c nupac -n "__fish_nupac_needs_command" -l backend -d 'C compiler backend (portable, clang, gcc)' -r
+complete -c nupac -n "__fish_nupac_needs_command" -l backend -d 'C compiler backend (clang is the default)' -r
 complete -c nupac -n "__fish_nupac_needs_command" -s o -d 'output path (binary or .c)' -r
 complete -c nupac -n "__fish_nupac_needs_command" -s I -d 'add include dir' -r
 complete -c nupac -n "__fish_nupac_needs_command" -s L -d 'add lib dir' -r

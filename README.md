@@ -316,9 +316,9 @@ The compiler ships with a **590-attribute classification table** (scraped from C
 
 | Option                        | Behavior                                                                            |
 | ----------------------------- | ----------------------------------------------------------------------------------- |
-| `-backend=portable` (default) | Only attributes supported by both gcc and clang; others error                       |
-| `-backend=clang`              | Allow clang-specific attributes (e.g. `availability`, `diagnose_if`, `objc_direct`) |
-| `-backend=gcc`                | Allow gcc-specific attributes (e.g. `strub`, `optimize`, `stack_protect`)           |
+| `-backend=clang` (default)    | Allow clang-specific attributes (e.g. `availability`, `diagnose_if`, `objc_direct`); gcc-only attributes error |
+| `-backend=portable`           | Only attributes supported by both gcc and clang; others error                        |
+| `-backend=gcc`                | Allow gcc-specific attributes (e.g. `strub`, `optimize`, `stack_protect`)            |
 
 Unknown attributes (not in the table) produce a warning and pass through — never a hard error.
 
@@ -797,7 +797,7 @@ Options:
   -fno-nupa-arc     Disable ARC (manual MRC mode)
   -fno-checker      Skip type checking
   -fno-libc         Bare-metal/freestanding output (no libc, no TLS)
-  -backend <mode>   C compiler backend: portable (default), clang, or gcc
+  -backend <mode>   C compiler backend: clang (default), portable, or gcc
   -arch <target>    Build for target architecture (e.g. -arch x86_64)
   -asm <file.s>     Link a real assembly file (repeatable)
   -gen-completions <shell>  Generate shell completion script (zsh|bash|fish)
