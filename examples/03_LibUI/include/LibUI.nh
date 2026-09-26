@@ -1,99 +1,124 @@
+/* ─────────────────────────────────────────────────────────────────────────
+ * LibUI.nh — ObjC-style declarations for the libui-ng wrapper.
+ *
+ * Pure Nupa: no `struct uiXxx` ever leaks out of LibUI.np. Every widget
+ * inherits from `Control`, so `append:`/`setContent:` take a `Control *`
+ * and you never touch a handle yourself. Callbacks take Nupa blocks.
+ * ───────────────────────────────────────────────────────────────────────── */
+
 #ifndef LIBUI_NH
 #define LIBUI_NH
 
-#include <ui.h>
 #import <Foundation/Foundation.nh>
 
 @namespace LibUI
 
-    @interface Window : NPObject {
-        @public
-        struct uiWindow *_handle;
+    /* ── Base class of every widget. The raw libui handle is an
+     * implementation detail hidden inside the wrapper. ── */
+    @interface Control : NPObject {
+        @protected
+        void *_handle;
     }
-        + (Window *)withTitle:(const char *)title width:(int)w height:(int)h;
         - (void)show;
-        + (void)activate;
-        - (void)onClosingQuit;
-        - (void)setChild:(struct uiControl *)child;
-        - (struct uiWindow *)handle;
+        - (void)hide;
+        - (void)setEnabled:(int)enabled;
+        - (int)enabled;
     @end
 
-    @interface Box : NPObject {
-        @public
-        struct uiBox *_handle;
-    }
-        + (Box *)vertical;
-        + (Box *)horizontal;
-        - (void)append:(struct uiControl *)child stretch:(int)stretch;
-        - (struct uiBox *)handle;
+    @interface Window : Control
+        + (Window *)windowWithTitle:(const char *)title width:(int)w height:(int)h;
+        - (void)setTitle:(const char *)title;
+        - (void)setContent:(Control *)view;
+        - (void)setMargined:(int)margined;
+        - (void)onClosing:(int (^)(void))handler;
+        - (void)bringToFront;  /* macOS: give the window keyboard focus */
     @end
 
-    @interface Button : NPObject {
-        @public
-        struct uiButton *_handle;
-        void *_cbData;
-    }
-        + (Button *)withText:(const char *)text;
-        - (void)onClicked:(void *)cb data:(void *)data;
-        - (struct uiButton *)handle;
+    @interface Box : Control
+        + (Box *)verticalBox;
+        + (Box *)horizontalBox;
+        - (void)append:(Control *)child stretch:(int)stretch;
+        - (void)setPadded:(int)padded;
     @end
 
-    @interface Label : NPObject {
-        @public
-        struct uiLabel *_handle;
-    }
-        + (Label *)withText:(const char *)text;
+    @interface Button : Control
+        + (Button *)buttonWithTitle:(const char *)title;
         - (void)setText:(const char *)text;
-        - (struct uiLabel *)handle;
+        - (const char *)text;
+        - (void)onClicked:(void (^)(void))handler;
     @end
 
-    @interface Entry : NPObject {
-        @public
-        struct uiEntry *_handle;
-    }
-        + (Entry *)create;
+    @interface Label : Control
+        + (Label *)labelWithText:(const char *)text;
+        - (void)setText:(const char *)text;
+        - (const char *)text;
+    @end
+
+    @interface Entry : Control
+        + (Entry *)entry;
+        + (Entry *)passwordEntry;
+        + (Entry *)searchEntry;
         - (const char *)text;
         - (void)setText:(const char *)text;
-        - (struct uiEntry *)handle;
+        - (void)onChanged:(void (^)(void))handler;
+        - (void)setReadOnly:(int)readonly;
     @end
 
-    @interface MultilineEntry : NPObject {
-        @public
-        struct uiMultilineEntry *_handle;
-    }
-        + (MultilineEntry *)create;
+    @interface MultilineEntry : Control
+        + (MultilineEntry *)multilineEntry;
+        + (MultilineEntry *)nonWrappingMultilineEntry;
         - (const char *)text;
         - (void)setText:(const char *)text;
-        - (struct uiMultilineEntry *)handle;
+        - (void)appendText:(const char *)text;
+        - (void)onChanged:(void (^)(void))handler;
+        - (void)setReadOnly:(int)readonly;
     @end
 
-    @interface Separator : NPObject {
-        @public
-        struct uiSeparator *_handle;
-    }
-        + (Separator *)horizontal;
-        + (Separator *)vertical;
-        - (struct uiSeparator *)handle;
+    @interface Checkbox : Control
+        + (Checkbox *)checkboxWithTitle:(const char *)title;
+        - (const char *)text;
+        - (void)setText:(const char *)text;
+        - (int)state;
+        - (void)setState:(int)state;
+        - (void)onToggled:(void (^)(void))handler;
     @end
 
-    @interface Group : NPObject {
-        @public
-        struct uiGroup *_handle;
-    }
-        + (Group *)withTitle:(const char *)title;
-        - (void)setChild:(struct uiControl *)child;
-        - (struct uiGroup *)handle;
+    @interface Slider : Control
+        + (Slider *)sliderWithMin:(int)min max:(int)max;
+        - (int)value;
+        - (void)setValue:(int)value;
+        - (void)onChanged:(void (^)(void))handler;
     @end
 
-    @interface Tab : NPObject {
-        @public
-        struct uiTab *_handle;
-    }
-        + (Tab *)create;
-        - (void)append:(const char *)name child:(struct uiControl *)child;
-        - (struct uiTab *)handle;
+    @interface Progress : Control
+        + (Progress *)progressBar;
+        - (int)value;
+        - (void)setValue:(int)value;
     @end
 
-@endnamespace // @namespace LibUI
+    @interface Separator : Control
+        + (Separator *)horizontalSeparator;
+        + (Separator *)verticalSeparator;
+    @end
 
-#endif
+    @interface Group : Control
+        + (Group *)groupWithTitle:(const char *)title;
+        - (void)setChild:(Control *)child;
+        - (void)setMargined:(int)margined;
+    @end
+
+    @interface Tab : Control
+        + (Tab *)tab;
+        - (void)append:(const char *)title child:(Control *)child;
+        - (void)setMargined:(int)index margined:(int)margined;
+    @end
+
+    @interface App : NPObject
+        + (void)start;   /* initializes the toolkit — call before any widget */
+        + (void)run;     /* enters the libui main loop */
+        + (void)quit;    /* asks the main loop to exit */
+    @end
+
+@endnamespace /* @namespace LibUI */
+
+#endif /* LIBUI_NH */

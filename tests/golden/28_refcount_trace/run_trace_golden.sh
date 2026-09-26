@@ -2,11 +2,23 @@
 # run_trace_golden.sh — run the refcount tracer (-trace-refcount) over
 # tests/golden/28_refcount_trace/*.np and diff the output against *.out.
 # Usage: ./run_trace_golden.sh
-#   NPAC    path to the nupac binary (default: target/release/nupac)
+#   NPAC    path to the nupac binary. Auto-detected: prefer an explicit $NPAC,
+#           then target/release/nupac, then target/debug/nupac. Auto-detection
+#           matters because a stale binary silently produces line-number-only
+#           diffs that look like real regressions.
 set -u
 cd "$(dirname "$0")/../../.."
 
-NPAC="${NPAC:-target/release/nupac}"
+if [[ -z "${NPAC:-}" ]]; then
+    for cand in target/release/nupac target/debug/nupac; do
+        if [[ -x "$cand" ]]; then NPAC="$cand"; break; fi
+    done
+fi
+if [[ -z "${NPAC:-}" || ! -x "$NPAC" ]]; then
+    echo "error: nupac binary not found (build it, or set NPAC=)" >&2
+    exit 2
+fi
+echo "using nupac: $NPAC"
 DIR=tests/golden/28_refcount_trace
 PASS=0
 FAIL=0

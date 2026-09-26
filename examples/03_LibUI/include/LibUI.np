@@ -1,129 +1,347 @@
 #import <LibUI.nh>
-#include <string.h>
+#import <Cocoa.np>
+#import <Foundation/Foundation.nh>
+#include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
-/* macOS activation helper (LibUI_mac.c) */
-void nk_app_activate(void);
+@using Cocoa = Cocoa::App;
 
-/* libui window close handler: quit the main loop */
-static int nk_window_closing(struct uiWindow *w, void *data) {
-    (void)w; (void)data;
-    uiQuit();
-    return 1;
-}
+/* ─────────────────────────────────────────────────────────────────────────
+ * LibUI.np — pure-Nupa wrapper over libui-ng.
+ *
+ * Nupa is a C superset: the libui C API is declared below (types reduced to
+ * `void *`), and this file turns it into plain ObjC-style classes. Every
+ * piece of C glue lives *here*, never at a call site:
+ *
+ *   • the raw `struct uiControl *` ivar lives on the Control base class
+ *     and is private to this file;
+ *   • libui's `void (*)(control, void *)` callbacks are adapted by
+ *     file-local C trampolines that re-fire a heap-copied Nupa block;
+ *   • callers just write `[btn onClicked:^{ ... }]` — AppKit style.
+ *
+ * No .c bridge file, no struct casts, no callback context structs.
+ * ───────────────────────────────────────────────────────────────────────── */
 
 @namespace LibUI
 
-    @implementation Window
-    + (Window *)withTitle:(const char *)title width:(int)w height:(int)h {
-        Window *self = [[self alloc] init];
-        if (self) {
-            self->_handle = uiNewWindow(title, w, h, 0);
-        }
-        return self;
-    }
-    - (void)show { uiControlShow((struct uiControl *)self->_handle); }
-    + (void)activate { nk_app_activate(); }
-    - (void)onClosingQuit { uiWindowOnClosing(self->_handle, nk_window_closing, NULL); }
-    - (void)setChild:(struct uiControl *)child { uiWindowSetChild(self->_handle, child); }
-    - (struct uiWindow *)handle { return self->_handle; }
-    @end
+/* ══════════════════════ libui C API (file-local) ══════════════════════ */
 
-    @implementation Box
-    + (Box *)vertical {
-        Box *self = [[self alloc] init];
-        if (self) self->_handle = uiNewVerticalBox();
-        return self;
-    }
-    + (Box *)horizontal {
-        Box *self = [[self alloc] init];
-        if (self) self->_handle = uiNewHorizontalBox();
-        return self;
-    }
-    - (void)append:(struct uiControl *)child stretch:(int)stretch { uiBoxAppend(self->_handle, child, stretch); }
-    - (struct uiBox *)handle { return self->_handle; }
-    @end
+extern void uiControlShow(void *c);
+extern void uiControlHide(void *c);
+extern void uiControlEnable(void *c);
+extern void uiControlDisable(void *c);
+extern int uiControlEnabled(void *c);
+extern void *uiNewWindow(const char *title, int w, int h, int hasMenubar);
+extern void uiWindowSetTitle(void *w, const char *title);
+extern void uiWindowSetChild(void *w, void *child);
+extern void uiWindowSetMargined(void *w, int margined);
+extern void uiWindowOnClosing(void *w, int (*cb)(void *, void *), void *data);
 
-    @implementation Button
-    + (Button *)withText:(const char *)text {
-        Button *self = [[self alloc] init];
-        if (self) {
-            self->_handle = uiNewButton(text);
-            self->_cbData = NULL;
-        }
-        return self;
-    }
-    - (void)onClicked:(void *)cb data:(void *)data {
-        self->_cbData = data;
-        uiButtonOnClicked(self->_handle, (void (*)(struct uiButton *, void *))cb, data);
-    }
-    - (struct uiButton *)handle { return self->_handle; }
-    @end
+extern void *uiNewVerticalBox(void);
+extern void *uiNewHorizontalBox(void);
+extern void uiBoxAppend(void *b, void *child, int stretch);
+extern void uiBoxSetPadded(void *b, int padded);
 
-    @implementation Label
-    + (Label *)withText:(const char *)text {
-        Label *self = [[self alloc] init];
-        if (self) self->_handle = uiNewLabel(text);
-        return self;
-    }
-    - (void)setText:(const char *)text { uiLabelSetText(self->_handle, text); }
-    - (struct uiLabel *)handle { return self->_handle; }
-    @end
+extern void *uiNewButton(const char *text);
+extern void uiButtonSetText(void *b, const char *text);
+extern const char *uiButtonText(void *b);
+extern void uiButtonOnClicked(void *b, void (*cb)(void *, void *), void *data);
 
-    @implementation Entry
-    + (Entry *)create {
-        Entry *self = [[self alloc] init];
-        if (self) self->_handle = uiNewEntry();
-        return self;
-    }
-    - (const char *)text { return uiEntryText(self->_handle); }
-    - (void)setText:(const char *)text { uiEntrySetText(self->_handle, text); }
-    - (struct uiEntry *)handle { return self->_handle; }
-    @end
+extern void *uiNewLabel(const char *text);
+extern void uiLabelSetText(void *l, const char *text);
+extern const char *uiLabelText(void *l);
 
-    @implementation MultilineEntry
-    + (MultilineEntry *)create {
-        MultilineEntry *self = [[self alloc] init];
-        if (self) self->_handle = uiNewMultilineEntry();
-        return self;
-    }
-    - (const char *)text { return uiMultilineEntryText(self->_handle); }
-    - (void)setText:(const char *)text { uiMultilineEntrySetText(self->_handle, text); }
-    - (struct uiMultilineEntry *)handle { return self->_handle; }
-    @end
+extern void *uiNewEntry(void);
+extern void *uiNewPasswordEntry(void);
+extern void *uiNewSearchEntry(void);
+extern const char *uiEntryText(void *e);
+extern void uiEntrySetText(void *e, const char *text);
+extern void uiEntryOnChanged(void *e, void (*cb)(void *, void *), void *data);
+extern void uiEntrySetReadOnly(void *e, int readonly);
 
-    @implementation Separator
-    + (Separator *)horizontal {
-        Separator *self = [[self alloc] init];
-        if (self) self->_handle = uiNewHorizontalSeparator();
-        return self;
-    }
-    + (Separator *)vertical {
-        Separator *self = [[self alloc] init];
-        if (self) self->_handle = uiNewVerticalSeparator();
-        return self;
-    }
-    - (struct uiSeparator *)handle { return self->_handle; }
-    @end
+extern void *uiNewMultilineEntry(void);
+extern void *uiNewNonWrappingMultilineEntry(void);
+extern const char *uiMultilineEntryText(void *m);
+extern void uiMultilineEntrySetText(void *m, const char *text);
+extern void uiMultilineEntryAppend(void *m, const char *text);
+extern void uiMultilineEntryOnChanged(void *m, void (*cb)(void *, void *), void *data);
+extern void uiMultilineEntrySetReadOnly(void *m, int readonly);
 
-    @implementation Group
-    + (Group *)withTitle:(const char *)title {
-        Group *self = [[self alloc] init];
-        if (self) self->_handle = uiNewGroup(title);
-        return self;
-    }
-    - (void)setChild:(struct uiControl *)child { uiGroupSetChild(self->_handle, child); }
-    - (struct uiGroup *)handle { return self->_handle; }
-    @end
+extern void *uiNewCheckbox(const char *text);
+extern const char *uiCheckboxText(void *c);
+extern void uiCheckboxSetText(void *c, const char *text);
+extern int uiCheckboxChecked(void *c);
+extern void uiCheckboxSetChecked(void *c, int state);
+extern void uiCheckboxOnToggled(void *c, void (*cb)(void *, void *), void *data);
 
-    @implementation Tab
-    + (Tab *)create {
-        Tab *self = [[self alloc] init];
-        if (self) self->_handle = uiNewTab();
-        return self;
-    }
-    - (void)append:(const char *)name child:(struct uiControl *)child { uiTabAppend(self->_handle, name, child); }
-    - (struct uiTab *)handle { return self->_handle; }
-    @end
+extern void *uiNewSlider(int min, int max);
+extern int uiSliderValue(void *s);
+extern void uiSliderSetValue(void *s, int value);
+extern void uiSliderOnChanged(void *s, void (*cb)(void *, void *), void *data);
 
-@endnamespace // @namespace LibUI
+extern void *uiNewProgressBar(void);
+extern int uiProgressBarValue(void *p);
+extern void uiProgressBarSetValue(void *p, int value);
+
+extern void *uiNewHorizontalSeparator(void);
+extern void *uiNewVerticalSeparator(void);
+
+extern void *uiNewGroup(const char *title);
+extern void uiGroupSetChild(void *g, void *child);
+extern void uiGroupSetMargined(void *g, int margined);
+
+extern void *uiNewTab(void);
+extern void uiTabAppend(void *t, const char *name, void *child);
+extern void uiTabSetMargined(void *t, int index, int margined);
+
+/* uiInit dereferences its options pointer unconditionally — pass a real
+ * zeroed uiInitOptions, never NULL (ui.h: `uiprivOptions = *o;`). */
+extern const char *uiInit(void *options);
+extern void uiMain(void);
+extern void uiQuit(void);
+extern void uiUninit(void);
+
+/* Blocks passed to libui must outlive the stack frame that created them;
+ * libui has no unregister API, so the copy is owned by the callback slot. */
+extern void *_Block_copy(const void *src);
+
+/* ── libui is libui: callbacks arrive as void (*)(control, void *). ──
+ * Generic trampolines re-fire a copied Nupa block of the right shape. */
+
+static void nk_fire_void(void *w, void *data) {
+    (void)w;
+    void (^blk)(void) = (void (^)(void))data;
+    if (blk) blk();
+}
+
+static int nk_fire_win_close(void *w, void *data) {
+    (void)w;
+    int (^blk)(void) = (int (^)(void))data;
+    return blk ? blk() : 1;
+}
+
+/* ══════════════════════════════ Control ══════════════════════════════ */
+
+@implementation Control : NPObject
+- (void)show { uiControlShow(_handle); }
+- (void)hide { uiControlHide(_handle); }
+- (void)setEnabled:(int)enabled { if (enabled) uiControlEnable(_handle); else uiControlDisable(_handle); }
+- (int)enabled { return uiControlEnabled(_handle); }
+@end
+
+/* ═══════════════════════════════ Window ═══════════════════════════════ */
+
+@implementation Window : Control
++ (Window *)windowWithTitle:(const char *)title width:(int)w height:(int)h {
+    Window *self = [[Window alloc] init];
+    if (self) _handle = uiNewWindow(title, w, h, 0);
+    return self;
+}
+- (void)setTitle:(const char *)title { uiWindowSetTitle(_handle, title); }
+- (void)setContent:(Control *)view { uiWindowSetChild(_handle, view->_handle); }
+- (void)setMargined:(int)margined { uiWindowSetMargined(_handle, margined); }
+- (void)onClosing:(int (^)(void))handler {
+    uiWindowOnClosing(_handle, nk_fire_win_close, _Block_copy((const void *)handler));
+}
+- (void)bringToFront { [Cocoa::NSApp activateApp]; }
+@end
+
+/* ════════════════════════════════ Box ════════════════════════════════ */
+
+@implementation Box : Control
++ (Box *)verticalBox {
+    Box *self = [[Box alloc] init];
+    if (self) _handle = uiNewVerticalBox();
+    return self;
+}
++ (Box *)horizontalBox {
+    Box *self = [[Box alloc] init];
+    if (self) _handle = uiNewHorizontalBox();
+    return self;
+}
+- (void)append:(Control *)child stretch:(int)stretch {
+    uiBoxAppend(_handle, child->_handle, stretch);
+}
+- (void)setPadded:(int)padded { uiBoxSetPadded(_handle, padded); }
+@end
+
+/* ═══════════════════════════════ Button ═══════════════════════════════ */
+
+@implementation Button : Control
++ (Button *)buttonWithTitle:(const char *)title {
+    Button *self = [[Button alloc] init];
+    if (self) _handle = uiNewButton(title);
+    return self;
+}
+- (void)setText:(const char *)text { uiButtonSetText(_handle, text); }
+- (const char *)text { return uiButtonText(_handle); }
+- (void)onClicked:(void (^)(void))handler {
+    uiButtonOnClicked(_handle, nk_fire_void, _Block_copy((const void *)handler));
+}
+@end
+
+/* ═══════════════════════════════ Label ═══════════════════════════════ */
+
+@implementation Label : Control
++ (Label *)labelWithText:(const char *)text {
+    Label *self = [[Label alloc] init];
+    if (self) _handle = uiNewLabel(text);
+    return self;
+}
+- (void)setText:(const char *)text { uiLabelSetText(_handle, text); }
+- (const char *)text { return uiLabelText(_handle); }
+@end
+
+/* ═══════════════════════════════ Entry ═══════════════════════════════ */
+
+@implementation Entry : Control
++ (Entry *)entry {
+    Entry *self = [[Entry alloc] init];
+    if (self) _handle = uiNewEntry();
+    return self;
+}
++ (Entry *)passwordEntry {
+    Entry *self = [[Entry alloc] init];
+    if (self) _handle = uiNewPasswordEntry();
+    return self;
+}
++ (Entry *)searchEntry {
+    Entry *self = [[Entry alloc] init];
+    if (self) _handle = uiNewSearchEntry();
+    return self;
+}
+- (const char *)text { return uiEntryText(_handle); }
+- (void)setText:(const char *)text { uiEntrySetText(_handle, text); }
+- (void)onChanged:(void (^)(void))handler {
+    uiEntryOnChanged(_handle, nk_fire_void, _Block_copy((const void *)handler));
+}
+- (void)setReadOnly:(int)readonly { uiEntrySetReadOnly(_handle, readonly); }
+@end
+
+/* ═══════════════════════════ MultilineEntry ═══════════════════════════ */
+
+@implementation MultilineEntry : Control
++ (MultilineEntry *)multilineEntry {
+    MultilineEntry *self = [[MultilineEntry alloc] init];
+    if (self) _handle = uiNewMultilineEntry();
+    return self;
+}
++ (MultilineEntry *)nonWrappingMultilineEntry {
+    MultilineEntry *self = [[MultilineEntry alloc] init];
+    if (self) _handle = uiNewNonWrappingMultilineEntry();
+    return self;
+}
+- (const char *)text { return uiMultilineEntryText(_handle); }
+- (void)setText:(const char *)text { uiMultilineEntrySetText(_handle, text); }
+- (void)appendText:(const char *)text { uiMultilineEntryAppend(_handle, text); }
+- (void)onChanged:(void (^)(void))handler {
+    uiMultilineEntryOnChanged(_handle, nk_fire_void, _Block_copy((const void *)handler));
+}
+- (void)setReadOnly:(int)readonly { uiMultilineEntrySetReadOnly(_handle, readonly); }
+@end
+
+/* ══════════════════════════════ Checkbox ══════════════════════════════ */
+
+@implementation Checkbox : Control
++ (Checkbox *)checkboxWithTitle:(const char *)title {
+    Checkbox *self = [[Checkbox alloc] init];
+    if (self) _handle = uiNewCheckbox(title);
+    return self;
+}
+- (const char *)text { return uiCheckboxText(_handle); }
+- (void)setText:(const char *)text { uiCheckboxSetText(_handle, text); }
+- (int)state { return uiCheckboxChecked(_handle); }
+- (void)setState:(int)state { uiCheckboxSetChecked(_handle, state); }
+- (void)onToggled:(void (^)(void))handler {
+    uiCheckboxOnToggled(_handle, nk_fire_void, _Block_copy((const void *)handler));
+}
+@end
+
+/* ═══════════════════════════════ Slider ═══════════════════════════════ */
+
+@implementation Slider : Control
++ (Slider *)sliderWithMin:(int)min max:(int)max {
+    Slider *self = [[Slider alloc] init];
+    if (self) _handle = uiNewSlider(min, max);
+    return self;
+}
+- (int)value { return uiSliderValue(_handle); }
+- (void)setValue:(int)value { uiSliderSetValue(_handle, value); }
+- (void)onChanged:(void (^)(void))handler {
+    uiSliderOnChanged(_handle, nk_fire_void, _Block_copy((const void *)handler));
+}
+@end
+
+/* ══════════════════════════════ Progress ══════════════════════════════ */
+
+@implementation Progress : Control
++ (Progress *)progressBar {
+    Progress *self = [[Progress alloc] init];
+    if (self) _handle = uiNewProgressBar();
+    return self;
+}
+- (int)value { return uiProgressBarValue(_handle); }
+- (void)setValue:(int)value { uiProgressBarSetValue(_handle, value); }
+@end
+
+/* ═════════════════════════════ Separator ═════════════════════════════ */
+
+@implementation Separator : Control
++ (Separator *)horizontalSeparator {
+    Separator *self = [[Separator alloc] init];
+    if (self) _handle = uiNewHorizontalSeparator();
+    return self;
+}
++ (Separator *)verticalSeparator {
+    Separator *self = [[Separator alloc] init];
+    if (self) _handle = uiNewVerticalSeparator();
+    return self;
+}
+@end
+
+/* ═══════════════════════════════ Group ═══════════════════════════════ */
+
+@implementation Group : Control
++ (Group *)groupWithTitle:(const char *)title {
+    Group *self = [[Group alloc] init];
+    if (self) _handle = uiNewGroup(title);
+    return self;
+}
+- (void)setChild:(Control *)child { uiGroupSetChild(_handle, child->_handle); }
+- (void)setMargined:(int)margined { uiGroupSetMargined(_handle, margined); }
+@end
+
+/* ════════════════════════════════ Tab ════════════════════════════════ */
+
+@implementation Tab : Control
++ (Tab *)tab {
+    Tab *self = [[Tab alloc] init];
+    if (self) _handle = uiNewTab();
+    return self;
+}
+- (void)append:(const char *)title child:(Control *)child {
+    uiTabAppend(_handle, title, child->_handle);
+}
+- (void)setMargined:(int)index margined:(int)margined {
+    uiTabSetMargined(_handle, index, margined);
+}
+@end
+
+/* ═══════════════════════════ libui main loop ═══════════════════════════ */
+
+static unsigned long nk_ui_init_options[2] = {0, 0};   /* uiInitOptions {Size} */
+
+@implementation App : NPObject
++ (void)start {
+    const char *err = uiInit(nk_ui_init_options);
+    if (err) {
+        printf("libui init error: %s\n", err);
+        [App quit];
+    }
+}
++ (void)run { uiMain(); }
++ (void)quit { uiQuit(); }
+@end
+
+@endnamespace /* @namespace LibUI */

@@ -1,0 +1,2 @@
+mag=0
+helper=5

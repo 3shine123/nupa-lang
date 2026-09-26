@@ -23,10 +23,19 @@ RUN_TIMEOUT = 3
 
 # ── Collect test binary names from .np files ──
 def _np_suite_files() -> list[Path]:
-    """All host-run .np tests, excluding out-of-band suites (QEMU kernel, cross-arch, freestanding)."""
+    """All host-run .np tests, excluding out-of-band suites (QEMU kernel, cross-arch,
+    freestanding) and the cross-TU suite.
+
+    tests/multi_tu is driven by its own runner (run_multi_tu.sh), which transpiles
+    each .np in a case to a SEPARATE translation unit and links them together.
+    test_all.py compiles every .np standalone, so it would report each lib.np as
+    "no main entry" and each main.np as a lone file — 18 phantom failures."""
     return sorted(
         p for p in PROJECT.glob("tests/**/*.np")
-        if "soma-kernel" not in p.parts and "25_freestanding" not in p.parts and "26_baremetal_stress" not in p.parts
+        if "soma-kernel" not in p.parts
+        and "25_freestanding" not in p.parts
+        and "26_baremetal_stress" not in p.parts
+        and "multi_tu" not in p.parts
     )
 
 NP_FILES = _np_suite_files()

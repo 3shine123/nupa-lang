@@ -939,8 +939,9 @@ Nupa 的"后端"是**人类可读的 C99**，不是 LLVM IR。这意味着：
 - ✅ Block / @autoreleasepool
 - ✅ 静态 ARC
 - ✅ @selector / VTable 多态
+- ✅ 异常处理（`@try`/`@catch`/`@finally`/`@throw`，`setjmp`/`longjmp`）
+  - ⚠️ 已知限制：跨函数抛出时，**跨越作用域仍存活的对象会泄漏**（`longjmp` 跳过其作用域末尾的 `nupa_release`）；同一函数内的 `@throw` 已正确处理。ARC 感知的 unwind 释放待实现。
 - ⏳ Foundation 标准库
-- ⏳ 异常处理
 - ⏳ 编译器自举
 
 ### 5. 可读性
@@ -1012,7 +1013,7 @@ Nupa 的"后端"是**人类可读的 C99**，不是 LLVM IR。这意味着：
 
 - [✅] 泛型（编译期单态化）
 
-- [ ] 异常处理
+- [x] 异常处理
 
 - [ ] 调试信息
 

@@ -159,9 +159,32 @@ NPObject *nupa_init(NPObject *self) {
     return self;
 }
 
+// ─── Refcount debug trace (NUPA_REFCOUNT_DEBUG) ─────────────────────────────
+// Purely a debug aid: reads the env var once, then prints every retain /
+// release event to stderr. Default OFF — zero behavior change when unset.
+// Static language note: this is plain C control flow baked in at compile
+// time; it adds no runtime dynamism to the language itself.
+static int nupa_rc_debug = -1;   // -1 = not yet resolved
+
+static int nupa_rc_debug_enabled(void) {
+    if (nupa_rc_debug < 0)
+        nupa_rc_debug = getenv("NUPA_REFCOUNT_DEBUG") != NULL;
+    return nupa_rc_debug;
+}
+
+static void nupa_rc_trace(const char *op, NPObject *obj, uint32_t rc_after, const char *note) {
+    const char *cls = (obj->isa && obj->isa->name) ? obj->isa->name : "?";
+    if (note)
+        fprintf(stderr, "[rc] %s %p %s rc=%u (%s)\n", op, (void *)obj, cls, rc_after, note);
+    else
+        fprintf(stderr, "[rc] %s %p %s rc=%u\n", op, (void *)obj, cls, rc_after);
+}
+
 NPObject *nupa_retain(NPObject *obj) {
     if (!obj) return NULL;
     obj->retain_count++;
+    if (nupa_rc_debug_enabled())
+        nupa_rc_trace("retain", obj, obj->retain_count, NULL);
     return obj;
 }
 
@@ -169,6 +192,12 @@ void nupa_release(NPObject *obj) {
     if (!obj) return;
     if (obj->retain_count > 0)
         obj->retain_count--;
+    if (nupa_rc_debug_enabled()) {
+        // Under-counting release (already at 0) is a bug worth flagging.
+        const char *note = (obj->retain_count == 0 && obj->isa && obj->isa->dealloc)
+            ? "dealloc" : NULL;
+        nupa_rc_trace("release", obj, obj->retain_count, note);
+    }
     if (obj->retain_count == 0) {
         // Zero weak references BEFORE dealloc: dealloc may free other objects
         // (strong ivars) whose memory holds a weak slot pointing back to us

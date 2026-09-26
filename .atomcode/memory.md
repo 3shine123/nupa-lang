@@ -1,0 +1,2 @@
+- nupa-lang 多 TU 铁律：每个类的方法必须对所有链接的 TU 可见（写在共享 .nh 里）；方法集不同的 TU 链接会 vtable 错配——codegen 已发 __sig 签名 + per-TU constructor 启动期 abort（不能放 nupa_metaInit，它被 weak 合并）。测试套件 tests/multi_tu/run_multi_tu.sh 9 场景。
+- nupa-lang parser 教训：(1) consume() 失败不能 advance()——会吃掉下一声明的首 token 造成隔行吞错误（已修，error_recovery.rs 4 测试守护）；(2) 批量删代码别用行号定位（会踩过期行号切坏文件），用内容匹配或 git diff 对照；调试 parser 循环用临时 eprintln hook 而非猜测。

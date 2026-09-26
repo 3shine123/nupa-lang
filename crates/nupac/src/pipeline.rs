@@ -6,7 +6,6 @@ use nupa_elaborator::Elaborator;
 use nupa_codegen::{ast_to_cg_unit, emit_unit_with_headers, emit_bridge_header};
 use nupa_preprocessor::Preprocessor;
 use nupa_symbol::SymbolTable;
-use nupa_cst::TranslationUnit;
 use nupa_ast::ast::*;
 use nupa_cfg::cfg_build;
 use nupa_arc::{arc_local_analyze, arc_global_analyze, arc_analyze_loops, arc_insert_actions, arc_optimize_pairs};
@@ -81,11 +80,13 @@ impl Pipeline {
         if self.verbose { eprintln!("[nupac] parsing..."); }
         let mut parser = Parser::new(&pre.resolved_nupa);
         let mut cst = parser.parse_translation_unit()
-            .ok_or_else(|| format!("Parse failed:\n{}", prefix_lines("[parser]", parser.last_error())))?;
+            .ok_or_else(|| format!("Parse failed:\n{}", prefix_lines("[parser]",
+                &translate_lines(parser.last_error(), &pre.source_map))))?;
         cst.filename = filename.to_string();
 
         if parser.has_error() {
-            return Err(format!("Parse failed:\n{}", prefix_lines("[parser]", parser.last_error())));
+            return Err(format!("Parse failed:\n{}", prefix_lines("[parser]",
+                &translate_lines(parser.last_error(), &pre.source_map))));
         }
 
         // Step 2: Bind names
@@ -93,7 +94,8 @@ impl Pipeline {
         let symtab = SymbolTable::new();
         let mut binder = Binder::new(symtab);
         if binder.bind(&mut cst) != 0 {
-            return Err(format!("Binding failed:\n{}", prefix_lines("[binder]", binder.last_error())));
+            return Err(format!("Binding failed:\n{}", prefix_lines("[binder]",
+                &translate_lines(binder.last_error(), &pre.source_map))));
         }
 
         // Step 3: Elaborate CST → AST
@@ -173,6 +175,7 @@ impl Pipeline {
         if !self.no_checker {
             let mut checker = Checker::new(Some(symtab_for_checker));
             checker.no_arc = self.no_arc;
+            checker.source_map = Some(pre.source_map.clone());
             if checker.check(&mut ast) != 0 {
                 return Err(format!("Type checking failed:\n{}", prefix_lines("[checker]", checker.last_error())));
             }
@@ -254,146 +257,6 @@ impl Pipeline {
     }
 }
 
-fn dump_ast_decl(d: &nupa_ast::AstDecl, indent: usize) {
-    let sp = "  ".repeat(indent);
-    eprintln!("{}kind={:?} name={:?}", sp, d.kind, d.name);
-    match &d.data {
-        nupa_ast::AstDeclData::Variable { var_type, init, is_block_qual, is_weak, .. } => {
-            eprintln!("{}  var_type={:?} init={:?}", sp, var_type, init);
-            if let Some(e) = init {
-                dump_ast_expr(e, indent + 2);
-            }
-        }
-        nupa_ast::AstDeclData::Function { return_type, params, body, .. } => {
-            eprintln!("{}  return={:?}", sp, return_type);
-            if let Some(p) = params {
-                let mut q = p.next.as_ref();
-                let mut idx = 0;
-                while let Some(param) = q {
-                    eprintln!("{}  param[{}]: name={:?} type={:?}", sp, idx, param.name, param.par_type);
-                    q = param.next.as_ref();
-                    idx += 1;
-                }
-            }
-            if let Some(b) = body {
-                eprintln!("{}  body:", sp);
-                dump_ast_stmt(b, indent + 2);
-            }
-        }
-        nupa_ast::AstDeclData::Class { methods, .. } => {
-            for m in methods {
-                eprintln!("{}  method:", sp);
-                dump_ast_decl(m, indent + 3);
-            }
-        }
-        nupa_ast::AstDeclData::Method { is_class_method, return_type, params, body, .. } => {
-            eprintln!("{}  is_class={} return={:?}", sp, is_class_method, return_type);
-            if let Some(b) = body {
-                eprintln!("{}  body:", sp);
-                dump_ast_stmt(b, indent + 2);
-            }
-        }
-        _ => {}
-    }
-}
-
-fn dump_ast_stmt(s: &nupa_ast::AstStmt, indent: usize) {
-    let sp = "  ".repeat(indent);
-    match &s.data {
-        nupa_ast::AstStmtData::Expr(e) => {
-            eprintln!("{}expr:", sp);
-            dump_ast_expr(e, indent + 1);
-        }
-        nupa_ast::AstStmtData::Return(v) => {
-            eprintln!("{}return:", sp);
-            if let Some(e) = v {
-                dump_ast_expr(e, indent + 1);
-            }
-        }
-        nupa_ast::AstStmtData::Decl(d) => {
-            eprintln!("{}decl:", sp);
-            dump_ast_decl(d, indent + 1);
-        }
-        nupa_ast::AstStmtData::Compound(stmts) => {
-            eprintln!("{}compound:", sp);
-            for st in stmts {
-                dump_ast_stmt(st, indent + 1);
-            }
-        }
-        _ => eprintln!("{}stmt kind={:?}", sp, s.kind),
-    }
-}
-
-fn dump_ast_expr(e: &nupa_ast::AstExpr, indent: usize) {
-    let sp = "  ".repeat(indent);
-    match &e.data {
-        nupa_ast::AstExprData::VarRef { name, .. } => eprintln!("{}VarRef({})", sp, name),
-        nupa_ast::AstExprData::IvarRef { ivar, obj, .. } => {
-            eprintln!("{}IvarRef({:?}) obj:", sp, ivar);
-            dump_ast_expr(obj, indent + 1);
-        }
-        nupa_ast::AstExprData::PropRef { name, obj, .. } => {
-            eprintln!("{}PropRef({}) obj:", sp, name);
-            dump_ast_expr(obj, indent + 1);
-        }
-        nupa_ast::AstExprData::MsgSend { receiver, selector, is_class_method, args, .. } => {
-            eprintln!("{}MsgSend(selector={} class={}) receiver:", sp, selector, is_class_method);
-            dump_ast_expr(receiver, indent + 1);
-            for a in args {
-                dump_ast_expr(a, indent + 1);
-            }
-        }
-        nupa_ast::AstExprData::FuncCall { name, args, .. } => {
-            eprintln!("{}FuncCall({})", sp, name);
-            for a in args {
-                dump_ast_expr(a, indent + 1);
-            }
-        }
-        nupa_ast::AstExprData::Assign { target, value } => {
-            eprintln!("{}Assign target:", sp);
-            dump_ast_expr(target, indent + 1);
-            eprintln!("{}value:", sp);
-            dump_ast_expr(value, indent + 1);
-        }
-        nupa_ast::AstExprData::Binary { op, left, right } => {
-            eprintln!("{}Binary(op={}) left:", sp, op);
-            dump_ast_expr(left, indent + 1);
-            eprintln!("{}right:", sp);
-            dump_ast_expr(right, indent + 1);
-        }
-        nupa_ast::AstExprData::Ternary { cond, then, else_ } => {
-            eprintln!("{}Ternary cond:", sp);
-            dump_ast_expr(cond, indent + 1);
-            eprintln!("{}then:", sp);
-            dump_ast_expr(then, indent + 1);
-            eprintln!("{}else:", sp);
-            dump_ast_expr(else_, indent + 1);
-        }
-        nupa_ast::AstExprData::Unary { op, operand, is_postfix } => {
-            eprintln!("{}Unary(op={} postfix={})", sp, op, is_postfix);
-            dump_ast_expr(operand, indent + 1);
-        }
-        nupa_ast::AstExprData::FuncCall { name, args, .. } => {
-            eprintln!("{}Call({})", sp, name);
-            for a in args {
-                dump_ast_expr(a, indent + 1);
-            }
-        }
-        nupa_ast::AstExprData::Int(v) => eprintln!("{}Int({})", sp, v),
-        nupa_ast::AstExprData::String(s) => eprintln!("{}String({})", sp, s),
-        nupa_ast::AstExprData::Cast { target_type, expr } => {
-            eprintln!("{}Cast target={:?}", sp, target_type);
-            dump_ast_expr(expr, indent + 1);
-        }
-        nupa_ast::AstExprData::Comma(exprs) => {
-            eprintln!("{}Comma:", sp);
-            for e in exprs {
-                dump_ast_expr(e, indent + 1);
-            }
-        }
-        _ => eprintln!("{}expr kind={:?}", sp, e.kind),
-    }
-}
 
 /// Prefix every non-empty line of a multi-error message with `[stage]` so a
 /// single compile can be read as a categorized report (parser/binder/checker…).
@@ -406,6 +269,42 @@ fn prefix_lines(stage: &str, msg: &str) -> String {
         })
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+/// Rewrites `LINE:COL: message` occurrences in a diagnostic string so the
+/// line points at the original source file (via the preprocessor's line map)
+/// instead of the flattened inlined buffer. Lines that can't be mapped are
+/// left untouched.
+fn translate_lines(msg: &str, sm: &nupa_cst::source_map::SourceMap) -> String {
+    if sm.is_empty() { return msg.to_string(); }
+    msg.lines().map(|l| {
+        // Parse leading `LINE:COL: ` (or `LINE: `)
+        let mut parts = l.splitn(3, ':');
+        let line_no: Option<usize> = parts.next().and_then(|p| p.trim().parse().ok());
+        let rest: String = match (parts.next(), parts.next()) {
+            (Some(col), Some(text)) => {
+                let col_trim = col.trim();
+                if col_trim.chars().all(|c| c.is_ascii_digit()) && col_trim.starts_with(|c: char| c.is_ascii_digit()) {
+                    format!("{}: {}", col_trim, text)
+                } else {
+                    format!("{}: {}", col, text)
+                }
+            }
+            (Some(col), None) => col.to_string(),
+            _ => return l.to_string(),
+        };
+        match line_no {
+            Some(n) if n > 0 => {
+                let (file, real) = sm.locate(n);
+                if file.is_empty() {
+                    l.to_string()
+                } else {
+                    format!("{}:{}: {}", file, real, rest.trim_start())
+                }
+            }
+            _ => l.to_string(),
+        }
+    }).collect::<Vec<_>>().join("\n")
 }
 
 

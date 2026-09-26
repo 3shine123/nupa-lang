@@ -142,7 +142,7 @@ pub struct Lexer<'a> {
 
 impl<'a> Lexer<'a> {
     pub fn new(source: &'a str) -> Self {
-        let mut lexer = Lexer {
+        let lexer = Lexer {
             source,
             pos: 0,
             line: 1,
@@ -156,10 +156,6 @@ impl<'a> Lexer<'a> {
     pub fn save_pos(&self) -> (usize, usize, usize) { (self.pos, self.line, self.column) }
     pub fn restore_pos(&mut self, saved: (usize, usize, usize)) {
         self.pos = saved.0; self.line = saved.1; self.column = saved.2;
-    }
-
-    fn remaining(&self) -> &'a str {
-        &self.source[self.pos..]
     }
 
     fn peek(&self) -> Option<u8> {
@@ -571,7 +567,8 @@ impl<'a> Lexer<'a> {
                         return self.make_token(TokenKind::Integer, start, end - start - suf, KeywordKind::None);
                     }
                     Some(b'f') | Some(b'F') => {
-                        is_float = true;
+                        // Float suffix: the token kind is already known, so the
+                        // outer `is_float` flag is irrelevant on this path.
                         self.advance();
                         let end = self.pos;
                         return self.make_token(TokenKind::Float, start, end - start, KeywordKind::None);

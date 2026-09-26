@@ -618,3 +618,57 @@ nupa-lang/
 - ⚠️ **Windows 仍未做**：`runtime.c` 的 `__thread` 需 MSVC 兼容（`__declspec(thread)`；zig cc 用 `__thread` 没问题）；建议 Windows 端**捆绑 `zig`** 作为 `zig cc` 后端（nupac 直接调用它，无需用户装 LLVM/MSVC）。
 - ⚠️ **`.gitignore` 隐患（已发现，待修）**：第 12 行 `nupac` 模式会匹配任意路径段，导致 **整个 `crates/nupac/` 未被 git 跟踪**（`git ls-files crates/nupac` 为空，`!! crates/nupac/`）；应改为 `/nupac`（仅根目录二进制）。另 `AGENTS.md`/`todo.md` 也在 `.gitignore` 中（未跟踪）。
 - ✅ **回归**：cargo unit 43/43、test_all **198/209**（同上 3 既有失败不变）。
+
+### 健壮性专项：多 TU + 错误恢复 + 死代码清理 ✅ (Sep 2026)
+
+本轮针对此前会话遗留的 bug 清单（#2~#9）系统性收尾。核心结论与产物：
+
+#### Bug #2 — parser 吞掉 `@interface`（真修）
+- **根因**：`parse_class_implementation` 不消费 `@implementation Base : NPObject` 的父类后缀。空方法体时循环撞上 `:`，fallback 逐 token 跳过，把 `: NPObject @end @interface Sub …` 一路吞到下一个 `@end`——`Sub` 的 interface 消失，binder 报 `cannot find class 'Sub' for @implementation`。
+- **修法**（`parser.rs`）：按 `parse_class_interface` 同样方式消费可选 `: Super` 并记录进 CST。
+- **回归测试**：`crates/parser/tests/impl_superclass_suffix.rs`（3 用例）。
+
+#### Bug #7 — 跨 TU vtable 布局错配（复现 + 启动期检测）
+- **复现**：两个 TU 方法集不同 → 各自 `struct nupa_vtable` 布局不同 → 链接器 weak 合并 vtable 实例 → 派发按错误偏移读函数指针。链接顺序反转即 exit=139。
+- **分析**：彻底修复需要跨 TU 稳定的槽位分配；任何依赖"集合"的方案（含纯哈希，73 selector 在 N=4096 仍有碰撞）都无法跨 TU 稳定，属大改，暂不做。
+- **落地**：把静默内存损坏变成启动期清晰致命错误——布局签名（FNV-1a over 排序后的实例方法名）作为 `struct nupa_vtable` **第一个成员 `__sig`**（随实例一起 weak 合并，赢家实例携带赢家布局的签名）；每个 TU 发射 `__attribute__((constructor))` 校验（**不能**放 `nupa_metaInit`——它被 weak 合并，只有一个 TU 的副本执行，自检永远通过，这是踩过的坑）；不一致时打印双方签名 + 方法列表 + TU 文件名后 abort；无 `<stdio.h>` 的 TU（含 freestanding）走 `__builtin_trap()`。
+- **单测**：`crates/codegen/src/codegen.rs` 的 `vtable_sig_tests`（3 个）。
+
+#### Bug #8 — 类元数据撞车（已自然修复）
+`UI::App`/`Game::App`、顶层 `App`/`UI::App` 实测正常，元数据正确编码为 `NUPA_CLASS_$_UI__App` 等独立符号。
+
+#### 多 TU 测试套件 `tests/multi_tu/`（9 场景，见其 README.md）
+- `./run_multi_tu.sh`（可按名字过滤；`NPAC=` 指定二进制）。
+- 覆盖：basic / inheritance / generic / namespace / block / protocol / arc / class_method / **负例**（`EXPECT_FAIL`+`EXPECT_FAIL_MATCH` 断言"失败且失败得清楚"）。
+- **暴露并修复的真实缺陷 — 协议方法丢失**：`@protocol` 的 required 方法从不并入 conformance 类的方法列表 → 只有 `@interface`（无 impl）的 TU 编出的 vtable 比实现 TU 少槽位 → 跨 TU 必错配。修法：binder 新增 `propagate_protocol_methods` 后处理 pass，把协议 required 方法的**声明克隆进** conformance 类的 `@interface`（CST 级注入，因为 codegen 从 AST 方法列表建槽位）；同时 `SymbolData::Protocol.required_methods/optional_methods/parents` 首次被真正填充（此前从未写入）。
+- **配套修复 — vtable 引用不存在的实现**：协议方法进槽位后 codegen 会引用 `Dog_speak`，但类未实现 → undefined symbol。新增 `EMITTED_METHODS` 集合（权威来源=最终 `unit.decls` 里带 body 的函数，覆盖 @synthesize getter 等 `method_bodies` 覆盖不到的路径），vtable 槽位对未发射的方法填 NULL（**槽位保留、引用不发**——这正是保布局稳定的正确语义）。曾因用 `method_bodies` 作来源漏掉 @synthesize 引发 50 个回归，改用 `unit.decls` 后归零。
+- test_all 的 glob 已排除 `tests/multi_tu`（其 `.np` 是库文件，standalone 编译必然"无 main"，产生 18 个幻影失败）。
+
+#### Parser 错误恢复 ✅（AGENTS.md 阶段 1 计划落地）
+- **根因（隔行吞咽）**：`consume()` 失败时无条件 `advance()`——缺 `;` 时吃掉下一行的 `int`，剩 `b = 2` 被解析成无害赋值 → 每隔一个错就消失一个。**修法：`consume` 失败不再前进**，让恢复循环从真实位置重同步。
+- **恢复循环**：`parse_translation_unit` / `parse_compound_statement` 均接入 `synchronize()`（返回 token offset 供前进守卫）；`synchronize` 同步点扩充了**类型关键字**（否则 `int a = 1 \n int b = 2` 会一路跳到 EOF）与 `@namespace`/`@using`/`#import` 等；声明/语句**成功返回但 panic_mode 置位**时只重置不跳过（解析器已停在下一个声明的合法位置，跳过反而吞掉它）。
+- **效果**：N 行缺 `;` 精确报 N 个错、行号准确、无 `expected '}'`/EOF 级联噪音（此前一次编译只报一个错）。
+- **回归测试**：`crates/parser/tests/error_recovery.rs`（4 用例）；新增 `Parser::error_count()` 访问器。
+- **教训**：修这类 bug 别猜，用临时 debug hook 打印循环迭代（`[loop] start_off / -> Some / panic`）一眼定位；行号定位的批量删改**必然**踩中过期行号（本轮 parser.rs 被切坏一次，用 `git diff` 对照 HEAD 逐处修复，最终 diff 与有意改动逐一核对）。
+
+#### 死代码清理 + `#![deny(dead_code)]`（18 crates）
+- 删除确认无引用的死函数：`binder::params_to_method_sym`、`checker::is_numeric_type`、`codegen::{needs_subclass_cast, emit_vtable_method_cast, objc_instance_needs_arrow}`、`lexer::remaining`、`parser::{peek, add_macro/lookup_macro/resolve_macro_int, keyword_to_type_prim}`（宏机制字段一并删）、`pipeline::dump_ast_*` 三件套。
+- 70 → 0 warnings：unused import（`cst::std::fmt`、`codegen::nupa_symbol::*`）、arc 里 6 处多余 `unsafe`（`&mut *inner` 不需要）、dead store（`is_float`/`has_args`/`vtable_class` 种子）、`FNPtr_TYPEDEF_NAMES`→`FNPTR_TYPEDEF_NAMES`、 unreachable `_` 臂加 `#[allow(unreachable_patterns)]` + 注释（新变体的安全网）、`synchronize` 当时以 `#[allow(dead_code)]` 标注保留（现已接入）。
+- **全部 18 个 crate 的 `lib.rs` 加 `#![deny(dead_code)]`**：死代码从此是编译错误而不是静默腐烂；有意保留的用 `#[allow(dead_code)]` + 注释说明谁会用。
+- `crates/arc/src/ownership.rs` 已在此前会话删除，无需处理。
+
+#### 诊断信息修正（#4）
+vtable 错配的 runtime 诊断原来建议"re-run nupac on ALL .np files"——**是错的**（09 负例证明方法集本来就不同，重跑无济于事）。改为解释机理（per-TU 布局 + weak 合并）+ 指出真正原因（方法只写在 `@implementation` 没进共享 `.nh`）+ 两种解法（声明进头文件 / 单 TU 构建）+ 指向 `tests/multi_tu/`。
+
+#### 回归基线（本轮结束时）
+- `cargo test --workspace`：**55 passed / 0 failed**（51 + 4 error_recovery；此前新增 impl_superclass_suffix 3 + vtable_sig 3）
+- `python3 test_all.py -j8`：**211/222 passed**，3 个既有失败不变（`diamond_impl.np`/`mega_types.np` 无 main、`double_release.np` 故意崩溃），8 canceled 交互式
+- `tests/multi_tu/run_multi_tu.sh`：**9/9**
+- `tests/golden/28_refcount_trace/run_trace_golden.sh`：**8/8**（`.out` 已重新生成；脚本改为自动探测 release/debug 二进制，`arc_inject` 的 release 顺序变化来自 RefVal 状态机重写，语义不变）
+- `crates/parser/examples/cst_dump.rs` 保留（`--inline` 模式可复刻 pipeline 预处理流调试）
+- 待清理：无（仓库根 probe_* 临时文件已删）
+
+#### 剩余已知问题（未在本轮处理）
+- **#5（容器泛型）**：`NPArray<T>` 单态化机制就绪但未接（同 `DataPack<T>` 模式）；泛型实例化由**使用点**驱动——lib TU 必须在方法体/变量声明里**命名** `Stack<int *>` 才会单态化（multi_tu/03 记录了这一限制），类方法返回类型里的 type_args 不被收集。
+- for-in 语法：parser 尚无 `for (x in y)` 规则（`CstStmtData::ForIn`/emitter 已写好待接线）；`convert_stmt` 的 ForIn 分支当前不可达（已注释说明）。
+- **#7 真修**（跨 TU 稳定布局）与 Foundation 容器库补齐（`NPDictionary`/`NPSet`/variadic 特判）仍在 backlog。

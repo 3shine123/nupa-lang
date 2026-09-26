@@ -1,5 +1,3 @@
-use std::fmt;
-
 // Type primitives
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TypePrim {

@@ -255,7 +255,6 @@ impl SymbolTable {
     }
 
     pub fn declare(&mut self, sym: Symbol) {
-        let name = sym.name.clone();
         let kind = sym.kind;
         // Global declarations go to global scope
         if matches!(kind, SymbolKind::Class | SymbolKind::Protocol | SymbolKind::Type | SymbolKind::Function) {

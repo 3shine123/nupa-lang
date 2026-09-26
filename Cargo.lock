@@ -143,6 +143,8 @@ version = "0.1.0"
 dependencies = [
  "nupa-ast",
  "nupa-cst",
+ "nupa-lexer",
+ "nupa-parser",
  "nupa-symbol",
 ]
 
@@ -170,6 +172,7 @@ dependencies = [
  "nupa-ast",
  "nupa-cst",
  "nupa-elaborator",
+ "nupa-ownership",
  "nupa-symbol",
 ]
 
@@ -215,11 +218,15 @@ version = "0.1.0"
 dependencies = [
  "nupa-cst",
  "nupa-lexer",
+ "nupa-preprocessor",
 ]
 
 [[package]]
 name = "nupa-preprocessor"
 version = "0.1.0"
+dependencies = [
+ "nupa-cst",
+]
 
 [[package]]
 name = "nupa-symbol"

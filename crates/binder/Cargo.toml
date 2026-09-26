@@ -7,3 +7,7 @@ edition = "2021"
 nupa-cst = { path = "../cst" }
 nupa-ast = { path = "../ast" }
 nupa-symbol = { path = "../symbol" }
+
+[dev-dependencies]
+nupa-lexer = { path = "../lexer" }
+nupa-parser = { path = "../parser" }

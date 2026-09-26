@@ -983,8 +983,9 @@ Start from a class system, add things gradually:
 - ✅ Static ARC
 - ✅ @selector / VTable polymorphism
 - ✅ @namespace
+- ✅ Exception handling (`@try`/`@catch`/`@finally`/`@throw` via `setjmp`/`longjmp`)
+  - ⚠️ Known limit: an object that lives across a **cross-function throw** leaks (the `longjmp` skips its scope-end `nupa_release`); same-function `@throw` is handled. ARC-aware unwind is planned.
 - ⏳ Foundation standard library
-- ⏳ Exception handling
 - ⏳ Compiler self-hosting
 
 ### 4. Readability

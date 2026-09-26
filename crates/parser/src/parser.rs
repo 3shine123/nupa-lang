@@ -12,8 +12,6 @@ pub struct Parser<'a> {
     panic_mode: bool,
     type_names: Vec<String>,
     type_params: Vec<String>,
-    macro_names: Vec<String>,
-    macro_values: Vec<String>,
     generic_class_names: Vec<String>,
 }
 
@@ -55,8 +53,6 @@ impl<'a> Parser<'a> {
                 "nlink_t".into(), "uid_t".into(), "gid_t".into(),
             ],
             type_params: Vec::new(),
-            macro_names: Vec::new(),
-            macro_values: Vec::new(),
             generic_class_names: Vec::new(),
         }
     }
@@ -69,9 +65,6 @@ impl<'a> Parser<'a> {
         &self.source[self.previous.start..self.previous.start + self.previous.length]
     }
 
-    fn peek(&self) -> &Token {
-        &self.current
-    }
 
     fn check(&self, kind: TokenKind) -> bool {
         self.current.kind == kind
@@ -144,7 +137,12 @@ impl<'a> Parser<'a> {
             self.advance();
         } else {
             self.error(&format!("{} (got {})", msg, self.current.kind));
-            self.advance();
+            // Do NOT advance past the offending token. The old behaviour ate it,
+            // which for a missing ';' swallowed the *next* declaration's leading
+            // token (`int b = 2` lost its `int`, the remnant parsed as a harmless
+            // assignment) — so every second error stayed hidden. Leaving the
+            // token in place lets the recovery loop in parse_translation_unit /
+            // parse_compound_statement resync from the real position.
         }
     }
 
@@ -169,25 +167,49 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn synchronize(&mut self) {
+    /// Skip to a recovery point after a parse error, so one bad declaration
+    /// does not hide every error after it. Returns the token offset it stopped
+    /// at, which the caller uses to guarantee forward progress.
+    ///
+    /// A recovery point is a token that can only start a new declaration or
+    /// statement. Type keywords are included deliberately: without them a file
+    /// like `int a = 1 \n int b = 2` would skip from the first error all the way
+    /// to EOF (no `;` and no statement keyword ever appears) and every later
+    /// error would stay hidden.
+    fn synchronize(&mut self) -> usize {
         self.panic_mode = false;
         while self.current.kind != TokenKind::Eof {
-            if self.previous.kind == TokenKind::Semicolon { return; }
+            if self.previous.kind == TokenKind::Semicolon { return self.current.start; }
             if self.current.kind == TokenKind::Keyword {
                 match self.current.keyword {
+                    // Declaration / statement openers.
                     KeywordKind::AtInterface | KeywordKind::AtImplementation |
                     KeywordKind::AtProtocol | KeywordKind::AtEnd |
                     KeywordKind::AtEndNamespace |
-                    KeywordKind::AtClass | KeywordKind::Return |
+                    KeywordKind::AtClass | KeywordKind::AtNamespace | KeywordKind::AtUsing |
+                    KeywordKind::Return |
                     KeywordKind::If | KeywordKind::While | KeywordKind::For |
                     KeywordKind::Do | KeywordKind::Switch |
-                    KeywordKind::Break | KeywordKind::Continue | KeywordKind::Else => return,
+                    KeywordKind::Break | KeywordKind::Continue | KeywordKind::Else => return self.current.start,
+                    // Type keywords: a fresh `int` / `struct` / typedef name means
+                    // the previous declaration ended (with a missing `;`).
+                    KeywordKind::Void | KeywordKind::Char | KeywordKind::Short |
+                    KeywordKind::Int | KeywordKind::Long | KeywordKind::Float |
+                    KeywordKind::Double | KeywordKind::Signed | KeywordKind::Unsigned |
+                    KeywordKind::Bool | KeywordKind::Id | KeywordKind::Class |
+                    KeywordKind::Sel | KeywordKind::Instancetype |
+                    KeywordKind::Struct | KeywordKind::Union | KeywordKind::Enum |
+                    KeywordKind::Typedef | KeywordKind::Static | KeywordKind::Extern |
+                    KeywordKind::Const | KeywordKind::Volatile | KeywordKind::Register |
+                    KeywordKind::Inline | KeywordKind::Import | KeywordKind::Include |
+                    KeywordKind::Define => return self.current.start,
                     _ => {}
                 }
             }
-            if self.current.kind == TokenKind::Eof { return; }
+            if self.current.kind == TokenKind::Eof { return self.current.start; }
             self.advance();
         }
+        self.current.start
     }
 
     fn add_type_name(&mut self, name: &str) {
@@ -221,43 +243,7 @@ impl<'a> Parser<'a> {
         self.generic_class_names.iter().any(|n| n == name)
     }
 
-    fn add_macro(&mut self, name: &str, value: &str) {
-        self.macro_names.push(name.to_string());
-        self.macro_values.push(value.to_string());
-    }
-
-    fn lookup_macro(&self, name: &str) -> Option<&str> {
-        self.macro_names.iter().rev()
-            .zip(self.macro_values.iter().rev())
-            .find(|(n, _)| n.as_str() == name)
-            .map(|(_, v)| v.as_str())
-    }
-
-    fn resolve_macro_int(&self, name: &str) -> Option<i32> {
-        self.lookup_macro(name).and_then(|v| v.parse().ok())
-    }
-
     // ─── Type parsing ─────────────────────────────────────────────────────
-
-    fn keyword_to_type_prim(kw: KeywordKind) -> TypePrim {
-        match kw {
-            KeywordKind::Void => TypePrim::Void,
-            KeywordKind::Char => TypePrim::Char,
-            KeywordKind::Short => TypePrim::Short,
-            KeywordKind::Int => TypePrim::Int,
-            KeywordKind::Long => TypePrim::Long,
-            KeywordKind::Float => TypePrim::Float,
-            KeywordKind::Double => TypePrim::Double,
-            KeywordKind::Bool => TypePrim::Bool,
-            KeywordKind::Signed => TypePrim::Signed,
-            KeywordKind::Unsigned => TypePrim::Unsigned,
-            KeywordKind::Id => TypePrim::Id,
-            KeywordKind::Class => TypePrim::Class,
-            KeywordKind::Sel => TypePrim::Sel,
-            KeywordKind::Instancetype => TypePrim::Instancetype,
-            _ => TypePrim::Named,
-        }
-    }
 
     fn parse_type_name(&mut self) -> Option<CstType> {
         let mut t = CstType::new(TypePrim::Void);
@@ -458,7 +444,10 @@ else if self.match_keyword(KeywordKind::Typeof) {
                     let mut params: Vec<CstType> = Vec::new();
                     while !self.check(TokenKind::RParen) && !self.check(TokenKind::Eof) {
                         if let Some(ptype) = self.parse_type_full() {
-                            if self.current.kind == TokenKind::Identifier {
+                            if self.current.kind == TokenKind::Identifier
+                                || (self.current.kind == TokenKind::Keyword
+                                    && (self.current.keyword == KeywordKind::Self_
+                                        || self.is_contextual_kw_ident())) {
                                 self.advance();
                             }
                             params.push(ptype);
@@ -509,7 +498,14 @@ else if self.match_keyword(KeywordKind::Typeof) {
                     let mut params: Vec<CstType> = Vec::new();
                     while !self.check(TokenKind::RParen) && !self.check(TokenKind::Eof) {
                         if let Some(ptype) = self.parse_type_full() {
-                            if self.current.kind == TokenKind::Identifier {
+                            // Optional parameter name. `self` is keyword-ized by
+                            // the lexer, so a parameter named `self` used to be
+                            // left unconsumed here, breaking the rest of the
+                            // parameter list (and producing a misleading error).
+                            if self.current.kind == TokenKind::Identifier
+                                || (self.current.kind == TokenKind::Keyword
+                                    && (self.current.keyword == KeywordKind::Self_
+                                        || self.is_contextual_kw_ident())) {
                                 self.advance();
                             }
                             params.push(ptype);
@@ -989,10 +985,8 @@ else if self.match_keyword(KeywordKind::Typeof) {
                     }
                 }
             }
-            let sel_start = self.current.start;
             let mut selector = String::new();
             let mut args = Vec::new();
-            let mut has_args = false;
             while self.current.kind == TokenKind::Identifier ||
                   (self.current.kind == TokenKind::Keyword && !matches!(self.current.keyword,
                       // @-structural directives
@@ -1023,7 +1017,6 @@ else if self.match_keyword(KeywordKind::Typeof) {
                       KeywordKind::Pragma | KeywordKind::Elif | KeywordKind::Undef
                   ))
             {
-                has_args = true;
                 let kw = self.current.keyword;
                 if kw == KeywordKind::Id || kw == KeywordKind::Class ||
                    kw == KeywordKind::Sel || kw == KeywordKind::Instancetype {
@@ -1225,7 +1218,10 @@ else if self.match_keyword(KeywordKind::Typeof) {
                     attributes: Vec::new(),
                         next: None,
                     };
-                    if self.current.kind == TokenKind::Identifier {
+                    if self.current.kind == TokenKind::Identifier
+                        || (self.current.kind == TokenKind::Keyword
+                            && (self.current.keyword == KeywordKind::Self_
+                                || self.is_contextual_kw_ident())) {
                         p.name = Some(self.current_text().to_string());
                         self.advance();
                     }
@@ -1918,10 +1914,29 @@ else if self.match_keyword(KeywordKind::Typeof) {
         self.consume(TokenKind::LBrace, "expected '{'");
         let mut stmts = Vec::new();
         while !self.check(TokenKind::RBrace) && !self.check(TokenKind::Eof) {
+            // Error recovery: a malformed statement must not swallow the rest of
+            // the block. Stop at the next `;` or statement keyword, and keep the
+            // `start` guard so a recovery point that is already current cannot
+            // spin forever.
+            let start = self.current.start;
             if let Some(s) = self.parse_statement() {
                 stmts.push(s);
+                // Same reasoning as the top-level loop: a statement that failed
+                // on a missing ';' still returns Some, leaving panic_mode set,
+                // which would suppress every later error in the block. Reset it
+                // here without skipping — the parser is still positioned at the
+                // start of the *next* statement in the common case.
+                if self.panic_mode {
+                    self.panic_mode = false;
+                    if self.current.start == start && !self.check(TokenKind::RBrace) && !self.check(TokenKind::Eof) {
+                        self.advance();
+                    }
+                }
             } else {
-                self.advance();
+                self.synchronize();
+                if self.current.start == start && !self.check(TokenKind::RBrace) && !self.check(TokenKind::Eof) {
+                    self.advance();
+                }
             }
         }
         self.consume(TokenKind::RBrace, "expected '}'");
@@ -2380,7 +2395,6 @@ else if self.match_keyword(KeywordKind::Typeof) {
     // ─── Declaration parsing ────────────────────────────────────────────
 
     fn parse_qualified_name_with_keywords(&mut self) -> Option<String> {
-        let saved = self.current.start;
         let mut name = String::new();
         if self.current.kind == TokenKind::Identifier {
             self.advance();
@@ -2815,7 +2829,6 @@ else if self.match_keyword(KeywordKind::Typeof) {
         }
 
         // Regular declaration: type name = ...; or type name(params) { ... }
-        let saved_pos = self.current.start;
         let qualifiers = self.parse_decl_qualifiers();
         let return_type = match self.parse_type_full() {
             Some(t) => t,
@@ -2979,7 +2992,7 @@ else if self.match_keyword(KeywordKind::Typeof) {
             self.current.keyword == KeywordKind::Union) {
             let is_union = self.current.keyword == KeywordKind::Union;
             self.advance();
-            let mut anon = false;
+            let _anon = false;
             if self.current.kind == TokenKind::Identifier {
                 // Named struct
                 let name = self.current_text().to_string();
@@ -3174,7 +3187,7 @@ if self.current.kind == TokenKind::Identifier {
         None
     }
 
-    fn parse_struct_body(&mut self, is_union: bool) -> Option<Vec<CstDecl>> {
+    fn parse_struct_body(&mut self, _is_union: bool) -> Option<Vec<CstDecl>> {
         self.advance(); // consume {
         let mut fields = Vec::new();
         while !self.check(TokenKind::RBrace) && !self.check(TokenKind::Eof) {
@@ -3533,7 +3546,6 @@ if self.current.kind == TokenKind::Identifier {
             } else if self.current.kind == TokenKind::Keyword &&
                       (self.current.keyword == KeywordKind::AtSynthesize ||
                        self.current.keyword == KeywordKind::AtDynamic) {
-                let is_dynamic = self.current.keyword == KeywordKind::AtDynamic;
                 self.advance();
             while self.current.kind == TokenKind::Identifier ||
                   (self.current.kind == TokenKind::Keyword && !matches!(self.current.keyword,
@@ -3562,7 +3574,6 @@ if self.current.kind == TokenKind::Identifier {
                       KeywordKind::Ifdef | KeywordKind::Ifndef | KeywordKind::Endif |
                       KeywordKind::Pragma | KeywordKind::Elif | KeywordKind::Undef
                   )) {
-                    let prop_name = self.current_text().to_string();
                     self.advance();
                     if self.match_token(TokenKind::Assign) {
                         if self.current.kind == TokenKind::Identifier {
@@ -3661,6 +3672,16 @@ if self.current.kind == TokenKind::Identifier {
 
         let mut methods = Vec::new();
         let mut impl_vars = Vec::new();
+        // Superclass suffix: `@implementation Base : NPObject` — ObjC allows
+        // repeating the superclass on @implementation. Without consuming it,
+        // an empty implementation body would leave `: NPObject` dangling and
+        // the fallback token-skip would swallow the following `@interface`.
+        let mut superclass = None;
+        if self.match_token(TokenKind::Colon) {
+            if self.current.kind == TokenKind::Identifier {
+                superclass = self.parse_qualified_name();
+            }
+        }
         while !self.match_keyword(KeywordKind::AtEnd) && !self.check(TokenKind::Eof) {
             if self.current.kind == TokenKind::Keyword && self.current.keyword == KeywordKind::Pragma {
                 if let Some(p) = self.parse_raw_pragma_decl() { methods.push(p); }
@@ -3725,7 +3746,7 @@ if self.current.kind == TokenKind::Identifier {
             name: Some(name),
             next: None,
             data: CstDeclData::Class {
-                superclass: None,
+                superclass,
                 category_name,
                 protocols: Vec::new(),
                 type_params: Vec::new(),
@@ -3767,7 +3788,7 @@ if self.current.kind == TokenKind::Identifier {
                 else if self.match_keyword(KeywordKind::AtSetter) {
                     self.consume(TokenKind::Assign, "expected '=' after setter");
                     if self.current.kind == TokenKind::Identifier {
-                        let mut s = self.current_text().to_string();
+                        let s = self.current_text().to_string();
                         self.advance();
                         if self.match_token(TokenKind::Colon) {
                             // setter name includes colon
@@ -4005,7 +4026,7 @@ if self.current.kind == TokenKind::Identifier {
                         self.advance();
                         n
                     } else { String::new() };
-                    let mut p = CstParam {
+                    let p = CstParam {
                         par_type: Some(Box::new(ptype)),
                         name: if pname.is_empty() { None } else { Some(pname) },
                         external_name: None,
@@ -4225,10 +4246,37 @@ if self.current.kind == TokenKind::Identifier {
     pub fn parse_translation_unit(&mut self) -> Option<TranslationUnit> {
         let mut decls = Vec::new();
         while self.current.kind != TokenKind::Eof {
+            // Error recovery: skip to the next declaration boundary so one bad
+            // declaration does not hide every error after it. The `start` guard
+            // guarantees forward progress — without it a recovery point that is
+            // already current (e.g. a stray `;` we just consumed) would spin.
+            let start = self.current.start;
             if let Some(d) = self.parse_declaration() {
                 decls.push(d);
+                // `consume` records the error but still lets the declaration
+                // complete, so a bad declaration returns Some. Reset and skip to
+                // the next boundary here — otherwise `panic_mode` stays set and
+                // every later `error()` is suppressed, which is why one compile
+                // used to report exactly one problem.
+                if self.panic_mode {
+                    // Reset only — do NOT skip. The parser is still inside a
+                    // well-formed declaration (typically sitting on the next
+                    // declarator's name after a missing ';'), and skipping to a
+                    // recovery point here would swallow the following
+                    // declaration whole: `int a = 1 / int b = 2` reported one
+                    // error instead of two. The `start` guard is still needed so
+                    // a declaration that completes without consuming anything
+                    // cannot spin.
+                    self.panic_mode = false;
+                    if self.current.start == start && self.current.kind != TokenKind::Eof {
+                        self.advance();
+                    }
+                }
             } else {
-                self.advance();
+                self.synchronize();
+                if self.current.start == start && self.current.kind != TokenKind::Eof {
+                    self.advance();
+                }
             }
         }
         Some(TranslationUnit {
@@ -4239,6 +4287,12 @@ if self.current.kind == TokenKind::Identifier {
 
     pub fn has_error(&self) -> bool {
         self.has_error
+    }
+
+    /// Number of errors recorded. Diagnostics tests use this to assert that
+    /// recovery reports *every* problem instead of only the first.
+    pub fn error_count(&self) -> usize {
+        self.error_count
     }
 
     pub fn last_error(&self) -> &str {

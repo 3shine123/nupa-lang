@@ -2,9 +2,13 @@ use std::collections::HashSet;
 use std::fs;
 use std::path::Path;
 
+use nupa_cst::SourceMap;
+
 pub struct Preprocessor {
     pub resolved_nupa: String,
     pub c_headers: Vec<String>,
+    /// Maps each line of `resolved_nupa` back to (file, source line).
+    pub source_map: SourceMap,
 }
 
 impl Preprocessor {
@@ -12,6 +16,7 @@ impl Preprocessor {
         Preprocessor {
             resolved_nupa: String::new(),
             c_headers: Vec::new(),
+            source_map: SourceMap::new(Vec::new()),
         }
     }
 }
@@ -34,10 +39,10 @@ fn is_directive(line: &str) -> Option<(bool, String)> {
     };
     let body = body.trim();
 
-    let (start_char, end_char) = if body.starts_with('<') {
-        ('<', '>')
+    let end_char = if body.starts_with('<') {
+        '>'
     } else if body.starts_with('"') {
-        ('"', '"')
+        '"'
     } else {
         return None;
     };
@@ -118,13 +123,15 @@ fn resolve_source(
     c_out: &mut Vec<String>,
     defined: &mut HashSet<String>,
     cond_stack: &mut Vec<CondFrame>,
+    line_map: &mut Vec<(String, u32)>,
 ) -> Result<(), String> {
     let dir = Path::new(file_path).parent()
         .and_then(|p| p.to_str())
         .unwrap_or(".")
         .to_string();
 
-    for line in content.lines() {
+    for (line_idx, line) in content.lines().enumerate() {
+        let src_line = (line_idx + 1) as u32;
         let trimmed = line.trim();
         // `active` = all blocks (including current) are emitting code.
         let active = cond_stack.iter().all(|f| f.active);
@@ -229,7 +236,7 @@ fn resolve_source(
                 if !search.contains(&dir) {
                     search.insert(0, dir.clone());
                 }
-                resolve_imports(&name, &search, resolved, nupa_out, c_out, defined, cond_stack)?;
+                resolve_imports(&name, &search, resolved, nupa_out, c_out, defined, cond_stack, line_map)?;
             } else {
                 poison_top_guard(cond_stack, c_out);
                 // #include → collect for C output (verbatim)
@@ -291,6 +298,7 @@ fn resolve_source(
                 poison_top_guard(cond_stack, c_out);
                 nupa_out.push_str(line);
                 nupa_out.push('\n');
+                line_map.push((file_path.to_string(), src_line));
             } else {
                 // #pragma (non-mark), #warning, etc.
                 poison_top_guard(cond_stack, c_out);
@@ -306,6 +314,7 @@ fn resolve_source(
             }
             nupa_out.push_str(line);
             nupa_out.push('\n');
+            line_map.push((file_path.to_string(), src_line));
         }
     }
     Ok(())
@@ -413,6 +422,7 @@ fn resolve_imports(
     c_out: &mut Vec<String>,
     defined: &mut HashSet<String>,
     cond_stack: &mut Vec<CondFrame>,
+    line_map: &mut Vec<(String, u32)>,
 ) -> Result<(), String> {
     // Try to find the file
     let content = try_open(name, search_dirs)
@@ -430,7 +440,7 @@ fn resolve_imports(
     }
     resolved.insert(full_path.clone());
 
-    resolve_source(&content, &full_path, search_dirs, resolved, nupa_out, c_out, defined, cond_stack)
+    resolve_source(&content, &full_path, search_dirs, resolved, nupa_out, c_out, defined, cond_stack, line_map)
 }
 
 impl Preprocessor {
@@ -453,12 +463,17 @@ impl Preprocessor {
         let mut defined = HashSet::new();
         for m in extra_macros { defined.insert(m.to_string()); }
         let mut cond_stack: Vec<CondFrame> = Vec::new();
+        // Line map: for each emitted inline line, the (file, source line) it
+        // came from. Lets parser/binder/checker errors point at real source
+        // positions instead of the flattened inlined buffer.
+        let mut line_map: Vec<(String, u32)> = Vec::new();
 
-        resolve_source(content, file_path, search_dirs, &mut resolved, &mut nupa_out, &mut c_out, &mut defined, &mut cond_stack)?;
+        resolve_source(content, file_path, search_dirs, &mut resolved, &mut nupa_out, &mut c_out, &mut defined, &mut cond_stack, &mut line_map)?;
 
         Ok(Preprocessor {
             resolved_nupa: nupa_out,
             c_headers: c_out,
+            source_map: SourceMap::new(line_map),
         })
     }
 }

@@ -79,7 +79,7 @@ fn extract_returned_var(e: &AstExpr) -> Option<&str> {
 fn insert_releases_before(stmts: &mut Vec<AstStmt>, pos: usize, vars: &mut Vec<String>, return_expr: Option<&AstExpr>) -> usize {
     let returned_var = return_expr.and_then(|e| extract_returned_var(e));
     let mut count = 0;
-    let mut i = 0;
+    let i = 0usize;
     while i < vars.len() {
         let name = vars[i].clone();
         if returned_var.map_or(false, |rv| rv == name.as_str()) {
@@ -224,7 +224,7 @@ pub fn arc_local_analyze(body: &mut AstStmt, _cfg: &Cfg, method_name: &str) -> A
                         then.data = AstStmtData::Compound(vec![AstStmt { kind: then.kind, line: then.line, col: then.col, data: body }]);
                     }
                     if let AstStmtData::Compound(ref mut inner) = then.data {
-                        unsafe { analyze_scope(&mut *inner, res, stack, false); }
+                        analyze_scope(inner, res, stack, false);
                     }
                     if let Some(ref mut el) = else_ {
                         if !matches!(el.data, AstStmtData::Compound(_)) {
@@ -232,7 +232,7 @@ pub fn arc_local_analyze(body: &mut AstStmt, _cfg: &Cfg, method_name: &str) -> A
                             el.data = AstStmtData::Compound(vec![AstStmt { kind: el.kind, line: el.line, col: el.col, data: body }]);
                         }
                         if let AstStmtData::Compound(ref mut inner) = el.data {
-                            unsafe { analyze_scope(&mut *inner, res, stack, false); }
+                            analyze_scope(inner, res, stack, false);
                         }
                     }
                     stmts[i].data = AstStmtData::If { cond, then, else_ };
@@ -250,7 +250,7 @@ pub fn arc_local_analyze(body: &mut AstStmt, _cfg: &Cfg, method_name: &str) -> A
                         recurse_loop_body(&mut body, res, stack);
                         stmts[i].data = AstStmtData::While { cond, body };
                     }
-                    AstStmtData::For { mut init, cond, mut incr, mut body } => {
+                    AstStmtData::For { init, cond, incr, mut body } => {
                         // Register an object declared in the for-init (e.g. `for (Mini *o = [[Mini alloc] init]; ...)`)
                         // in the enclosing scope so it's released at scope end. Its declaration
                         // is hoisted out of the for header by codegen.
@@ -270,7 +270,7 @@ pub fn arc_local_analyze(body: &mut AstStmt, _cfg: &Cfg, method_name: &str) -> A
                         recurse_loop_body(&mut body, res, stack);
                         stmts[i].data = AstStmtData::For { init, cond, incr, body };
                     }
-                    AstStmtData::ForIn { mut var, mut collection, mut body } => {
+                    AstStmtData::ForIn { var, collection, mut body } => {
                         recurse_loop_body(&mut body, res, stack);
                         stmts[i].data = AstStmtData::ForIn { var, collection, body };
                     }
@@ -284,14 +284,14 @@ pub fn arc_local_analyze(body: &mut AstStmt, _cfg: &Cfg, method_name: &str) -> A
             if stmts[i].kind == AstStmtKind::Try {
                 let try_taken = std::mem::replace(&mut stmts[i].data, AstStmtData::Expr(AstExpr { kind: AstExprKind::Int, expr_type: None, line: 0, col: 0, data: AstExprData::Int(0) }));
                 if let AstStmtData::Try { mut try_block, mut catches, mut finally_block } = try_taken {
-                    if let AstStmtData::Compound(ref mut inner) = try_block.data { unsafe { analyze_scope(&mut *inner, res, stack, false); } }
+                    if let AstStmtData::Compound(ref mut inner) = try_block.data { analyze_scope(inner, res, stack, false); }
                     for c in catches.iter_mut() {
                         if let AstStmtData::Catch { ref mut body, .. } = c.data {
-                            if let AstStmtData::Compound(ref mut inner) = body.data { unsafe { analyze_scope(&mut *inner, res, stack, false); } }
+                            if let AstStmtData::Compound(ref mut inner) = body.data { analyze_scope(inner, res, stack, false); }
                         }
                     }
                     if let Some(ref mut fb) = finally_block {
-                        if let AstStmtData::Compound(ref mut inner) = fb.data { unsafe { analyze_scope(&mut *inner, res, stack, false); } }
+                        if let AstStmtData::Compound(ref mut inner) = fb.data { analyze_scope(inner, res, stack, false); }
                     }
                     stmts[i].data = AstStmtData::Try { try_block, catches, finally_block };
                 }
@@ -357,7 +357,7 @@ pub fn arc_local_analyze(body: &mut AstStmt, _cfg: &Cfg, method_name: &str) -> A
     }
 
     fn recurse_scope(inner: &mut Vec<AstStmt>, res: &mut ArcResult, stack: &mut Vec<Scope>) {
-        unsafe { analyze_scope(inner, res, stack, false); }
+        analyze_scope(inner, res, stack, false);
     }
 
     fn recurse_loop_body(body: &mut AstStmt, res: &mut ArcResult, stack: &mut Vec<Scope>) {

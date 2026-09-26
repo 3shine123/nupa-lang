@@ -3,7 +3,6 @@ use std::sync::atomic::{AtomicU8, AtomicUsize, Ordering};
 use std::sync::{Mutex, OnceLock};
 use std::collections::HashMap;
 use nupa_ast::*;
-use nupa_symbol::*;
 use nupa_cst::{TypePrim, CstParam};
 use attrs::Backend;
 
@@ -20,6 +19,25 @@ fn block_vars() -> std::sync::MutexGuard<'static, Option<std::collections::HashS
 
 fn is_block_var(name: &str) -> bool {
     block_vars().as_ref().map_or(false, |s| s.contains(name))
+}
+
+// ─── Emitted method bodies (`Owner_method` symbols that really exist) ────────
+// A vtable slot can exist without an implementation: a method a class declares
+// by conforming to a protocol, or one it declares but implements in another
+// translation unit. Those slots must initialise to NULL instead of naming a
+// function that is never emitted (which would be an undefined symbol at link
+// time). Populated while the class metadata is assembled.
+static EMITTED_METHODS: std::sync::Mutex<Option<std::collections::HashSet<String>>> =
+    std::sync::Mutex::new(None);
+
+fn emitted_methods() -> std::sync::MutexGuard<'static, Option<std::collections::HashSet<String>>> {
+    EMITTED_METHODS.lock().unwrap()
+}
+
+fn method_is_emitted(owner: &str, mname: &str) -> bool {
+    emitted_methods()
+        .as_ref()
+        .map_or(true, |s| s.contains(&format!("{}_{}", owner, mname)))
 }
 
 // ─── Block-expansion definitions (gcc/portable) ──────────────────────────────
@@ -39,6 +57,22 @@ fn meta_symbol(kind: &str, flat: &str) -> String {
         _ => "",        // portable=0
     };
     format!("NUPA_{}{}{}", kind, sep, flat)
+}
+
+/// FNV-1a fingerprint of the uniform vtable layout, i.e. of the (sorted) set of
+/// instance-method names this translation unit compiled a `struct nupa_vtable`
+/// for. Two units agree iff they saw the same method set; the value is stamped
+/// into every vtable instance and verified at load time so a cross-TU layout
+/// mismatch aborts with a clear message instead of dispatching garbage.
+fn vtable_layout_sig(method_names: &[String]) -> u64 {
+    let mut h: u64 = 0xcbf29ce484222325;
+    for mname in method_names {
+        for b in mname.as_bytes() {
+            h ^= *b as u64;
+            h = h.wrapping_mul(0x100000001b3);
+        }
+    }
+    h
 }
 
 // ─── Global vtable method metadata (set during ast_to_cg_unit) ────────────
@@ -93,23 +127,10 @@ static BLOCK_TYPEDEF_NAMES: OnceLock<Mutex<HashMap<String, String>>> = OnceLock:
 // rather than blocks. They share `BLOCK_TYPEDEF_NAMES` for flat-name resolution
 // (fields/ivars/vars) but must NOT be treated as block variables: a plain fnptr
 // call has to stay `fn(4,5)`, never `((...)->invoke)(fn,4,5)` on gcc/portable.
-static FNPtr_TYPEDEF_NAMES: OnceLock<Mutex<std::collections::HashSet<String>>> = OnceLock::new();
+static FNPTR_TYPEDEF_NAMES: OnceLock<Mutex<std::collections::HashSet<String>>> = OnceLock::new();
 
 // ─── Current function return type (for covariant return cast) ────────────────
 static CURRENT_RETURN_TYPE: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
-
-/// Check if `expr_type` is a subclass pointer of `func_return_type` (both C
-/// type strings), using `class_infos` to walk the superclass chain.  If so,
-/// the expression needs an explicit cast to squelch `-Wincompatible-pointer-types`.
-fn needs_subclass_cast(expr_type: &AstType, func_return_type: &str, class_infos: &std::collections::BTreeMap<String, ClassInfo>) -> bool {
-    // If the function returns a struct pointer (`X *`) and the value is a
-    // different pointer type, the mismatch is almost always a covariant
-    // return from a vtable dispatch or `self` — cast it to silence gcc.
-    if !func_return_type.contains(" *") { return false; }
-    if expr_type.prim == TypePrim::Id { return true; }
-    if !expr_type.is_pointer { return false; }
-    true  // different pointer types → cast
-}
 
 fn next_temp_id() -> usize {
     TEMP_VAR_COUNTER.fetch_add(1, Ordering::SeqCst)
@@ -714,38 +735,6 @@ pub fn ast_type_to_c_str(t: &AstType) -> String {
 
 // ─── AST → CG conversion ─────────────────────────────────────────────────────
 
-// All ObjC class instances are emitted as `Type *` (pointer to struct) in the
-// generated C. When the user writes `obj.field` (source `.`) on such an
-// instance, the elaborator's fallback path preserves `is_arrow=false`, which
-// would emit a C `.` — wrong, since the instance is a pointer. This helper
-// inspects the object expression of a PropRef and returns true when we can
-// prove the object is an ObjC class instance (forcing `->`).
-fn objc_instance_needs_arrow(obj: &AstExpr, class_infos: &std::collections::BTreeMap<String, ClassInfo>) -> bool {
-    // Self/super inside a method body: instances are `Type *` → `->`.
-    if matches!(obj.kind, AstExprKind::Self_ | AstExprKind::Super) {
-        return true;
-    }
-    // A VarRef whose name matches a known ObjC class is a class-method
-    // receiver; not an instance. Skip.
-    if let AstExprData::VarRef { name, .. } = &obj.data {
-        // If the identifier is itself a registered class name, this is a
-        // class-method receiver (`[Student alloc]`), not an instance — `.` is fine.
-        if class_infos.values().any(|ci| ci.class_name == *name) {
-            return false;
-        }
-        // Otherwise, if the identifier resolves to an ivar of some class,
-        // the ivar's type might be a class instance. We can't easily tell
-        // here without symtab, so be conservative: only force `->` when we
-        // know the object is a class instance. Fall through to default below.
-    }
-    // Cast expressions like `((struct Student *)self)` always produce a
-    // pointer; force `->`.
-    if matches!(obj.kind, AstExprKind::Cast) {
-        return true;
-    }
-    false
-}
-
 fn op_to_str(op: i32, is_assign: bool) -> &'static str {
     if is_assign {
         match op {
@@ -1065,7 +1054,8 @@ fn convert_expr(ae: &AstExpr, class_infos: &std::collections::BTreeMap<String, C
             let mut call_args = Vec::new();
             let mut effective_is_class = *is_class_method;
 
-            let mut vtable_class = None;
+            // Both arms below assign before reading, so there is no useful seed.
+            let mut vtable_class: Option<String>;
             let mut alt_vtable_classes: Vec<String> = Vec::new();
             if *is_super {
                 // For super calls, start with the direct superclass name.
@@ -1183,7 +1173,7 @@ fn convert_expr(ae: &AstExpr, class_infos: &std::collections::BTreeMap<String, C
             }
 
             if effective_is_class {
-                if let Some(ref vc) = vtable_class {
+                if let Some(ref _vc) = vtable_class {
                     let receiver_class = match &receiver.data {
                         AstExprData::VarRef { name, .. } => Some(name.clone()),
                         _ => None,
@@ -1344,7 +1334,7 @@ fn convert_expr(ae: &AstExpr, class_infos: &std::collections::BTreeMap<String, C
                     }
                 }
             }
-            let mut cg_args: Vec<CgExpr> = args.iter().map(|a| convert_expr(a, &class_infos)).collect();
+            let cg_args: Vec<CgExpr> = args.iter().map(|a| convert_expr(a, &class_infos)).collect();
             if let Some(sel) = auto_sel {
                 // Convert NPObject_* calls to vtable dispatch by setting vtable_class,
                 // sel_const_name, and using the method name (without NPObject_ prefix).
@@ -1795,6 +1785,153 @@ fn decl_refs_name(decl: &AstDecl, name: &str) -> bool {
     }
 }
 
+// ─── @try unwind-lift shadow counter ─────────────────────────────────────────
+static TRY_LIFT_COUNTER: AtomicUsize = AtomicUsize::new(0);
+
+fn try_lift_shadow(name: &str, id: usize) -> String {
+    format!("__nupa_lift_{}_{}", name, id)
+}
+
+fn ast_varref(name: &str) -> AstExpr {
+    AstExpr {
+        kind: AstExprKind::VarRef, expr_type: None, line: 0, col: 0,
+        data: AstExprData::VarRef { sym: None, name: name.into() },
+    }
+}
+
+fn npobject_ptr_type() -> AstType {
+    let mut t = AstType::new(TypePrim::Named);
+    t.name = Some("NPObject".into());
+    t.is_pointer = true;
+    t
+}
+
+/// Mirror-assign statement: `__nupa_lift_x_N = (NPObject *)(void *)x;`
+/// Keeps the pre-setjmp shadow pointer in sync with the original variable
+/// so the unwind path can release what longjmp would skip. The double cast
+/// (via `void *`) silences incompatible-pointer-types with -Wall -Wextra.
+fn lift_mirror_stmt(shadow: &str, var: &str) -> AstStmt {
+    let mut void_t = AstType::new(TypePrim::Void);
+    void_t.is_pointer = true;
+    AstStmt {
+        kind: AstStmtKind::Expr, line: 0, col: 0,
+        data: AstStmtData::Expr(AstExpr {
+            kind: AstExprKind::Assign, expr_type: None, line: 0, col: 0,
+            data: AstExprData::Assign {
+                target: Box::new(ast_varref(shadow)),
+                value: Box::new(AstExpr {
+                    kind: AstExprKind::Cast, expr_type: None, line: 0, col: 0,
+                    data: AstExprData::Cast {
+                        target_type: npobject_ptr_type(),
+                        expr: Box::new(AstExpr {
+                            kind: AstExprKind::Cast, expr_type: None, line: 0, col: 0,
+                            data: AstExprData::Cast {
+                                target_type: void_t,
+                                expr: Box::new(ast_varref(var)),
+                            },
+                        }),
+                    },
+                }),
+            },
+        }),
+    }
+}
+
+/// Walk the (already ARC-annotated) try body and insert mirror assignments
+/// after every declaration of, and every assignment to, a lifted variable.
+fn insert_lift_mirrors(stmts: &mut Vec<AstStmt>, vars: &[(String, String)]) {
+    let mut i = 0;
+    while i < stmts.len() {
+        // Recurse into nested bodies first so inner mirrors are also emitted.
+        match &mut stmts[i].data {
+            AstStmtData::Compound(inner) => insert_lift_mirrors(inner, vars),
+            AstStmtData::If { then, else_, .. } => {
+                if let AstStmtData::Compound(inner) = &mut then.data { insert_lift_mirrors(inner, vars); }
+                if let Some(el) = else_ {
+                    if let AstStmtData::Compound(inner) = &mut el.data { insert_lift_mirrors(inner, vars); }
+                }
+            }
+            AstStmtData::While { body, .. } | AstStmtData::For { body, .. } => {
+                if let AstStmtData::Compound(inner) = &mut body.data { insert_lift_mirrors(inner, vars); }
+            }
+            _ => {}
+        }
+
+        let mirror: Option<String> = match &stmts[i].data {
+            AstStmtData::Decl(d) => {
+                let mut found = None;
+                let mut cur: Option<&AstDecl> = Some(d);
+                while let Some(decl) = cur {
+                    if let Some(n) = &decl.name {
+                        if let Some((shadow, _)) = vars.iter().find(|(_, o)| o == n) {
+                            found = Some(shadow.clone());
+                        }
+                    }
+                    if let AstDeclData::Variable { next, .. } = &decl.data {
+                        cur = next.as_ref().map(|b| &**b);
+                    } else { cur = None; }
+                }
+                found
+            }
+            AstStmtData::Expr(e) => {
+                if let AstExprData::Assign { target, .. } = &e.data {
+                    if let AstExprData::VarRef { name, .. } = &target.data {
+                        vars.iter().find(|(_, o)| o == name).map(|(s, _)| s.clone())
+                    } else { None }
+                } else { None }
+            }
+            _ => None,
+        };
+        if let Some(shadow) = mirror {
+            let orig = vars.iter().find(|(s, _)| *s == shadow).map(|(_, o)| o.clone()).unwrap_or_default();
+            let m = lift_mirror_stmt(&shadow, &orig);
+            stmts.insert(i + 1, m);
+            i += 1;
+        }
+        i += 1;
+    }
+}
+
+/// Object-typed pointer: eligible for @try unwind ARC lifting.
+fn try_lift_type_ok(t: &AstType) -> bool {
+    (t.is_pointer && !t.is_array && !t.is_fn_ptr && !t.is_block)
+        || t.prim == TypePrim::Id
+        || t.prim == TypePrim::Instancetype
+}
+
+/// Collect object local variables declared directly in `stmts` (including the
+/// `next` chain of each Decl and for-init decls) that ARC treats as owned
+/// (retained init, non-static, non-extern). These get shadow-lifted before
+/// setjmp so the unwind path can release what longjmp would skip.
+fn collect_try_lift_vars(stmts: &[AstStmt], out: &mut Vec<(String, AstType)>) {
+    for s in stmts {
+        if let AstStmtData::Decl(d) = &s.data {
+            let mut cur: Option<&AstDecl> = Some(d);
+            while let Some(decl) = cur {
+                if let AstDeclData::Variable {
+                    var_type: Some(t), init: Some(init_val),
+                    is_static: false, is_extern: false, is_block_qual: false, ..
+                } = &decl.data {
+                    if let Some(name) = &decl.name {
+                        if try_lift_type_ok(t)
+                            && nupa_ownership::ownership_for_expr(init_val) == nupa_ownership::Ownership::Retained
+                            && !out.iter().any(|(n, _)| n == name)
+                        {
+                            out.push((name.clone(), (**t).clone()));
+                        }
+                    }
+                }
+                // Walk the `T a = ..., b = ...;` next chain.
+                if let AstDeclData::Variable { next, .. } = &decl.data {
+                    cur = next.as_ref().map(|b| &**b);
+                } else {
+                    cur = None;
+                }
+            }
+        }
+    }
+}
+
 fn convert_stmt(as_: &AstStmt, class_infos: &std::collections::BTreeMap<String, ClassInfo>) -> CgStmt {
     let line = as_.line; let col = as_.col;
     match &as_.data {
@@ -1905,12 +2042,11 @@ fn convert_stmt(as_: &AstStmt, class_infos: &std::collections::BTreeMap<String, 
             });
             CgStmt { kind: CgStmtKind::Compound, line, col, data: CgStmtData::Compound(stmts) }
         }
-        AstStmtData::ForIn { var, collection, body } => {
-            // Convert for-in to a simple for loop over the collection
-            let var_cg = convert_expr(var, &class_infos);
-            let col_cg = convert_expr(collection, &class_infos);
-            let cg_body = convert_stmt(body, &class_infos);
-            // For now, emit as compound with a comment
+        AstStmtData::ForIn { .. } => {
+            // Unreachable today: the parser has no `for (x in y)` rule yet, so
+            // no ForIn node reaches codegen. CgStmtData::ForIn (and its emitter
+            // at ~5441) is written and waiting; wiring the syntax up should
+            // produce CgStmtData::ForIn here instead of an empty compound.
             CgStmt { kind: CgStmtKind::Compound, line, col, data: CgStmtData::Compound(Vec::new()) }
         }
         AstStmtData::NoArc(body) => {
@@ -1923,7 +2059,40 @@ fn convert_stmt(as_: &AstStmt, class_infos: &std::collections::BTreeMap<String, 
         }
         AstStmtData::Try { try_block, catches, finally_block } => {
             // setjmp/longjmp exception handling with save/restore for nesting
-            let try_cg = convert_stmt(try_block, class_infos);
+            //
+            // ARC unwind-lift: `__attribute__((cleanup))` does NOT run under
+            // longjmp (verified on clang/gcc), so an object declared inside the
+            // @try body would leak when an exception crosses the throw point —
+            // its scope-end nupa_release is skipped by the longjmp. Fix:
+            //   1. Hoist a volatile NPObject* shadow (init NULL) BEFORE setjmp
+            //      for every ARC-owned object local in the try body.
+            //   2. Mirror every decl/assignment of the original into the shadow.
+            //   3. On the unwind path (state==1, before rethrowing longjmp)
+            //      release the shadow — the release longjmp would have skipped.
+            // Normal path and unwind path are mutually exclusive, so no
+            // double-release.
+            // Collect ARC-owned object locals declared directly in the try body,
+            // insert mirror assignments into a cloned body, then convert it.
+            let mut lifted: Vec<(String, AstType)> = Vec::new();
+            if let AstStmtData::Compound(inner) = &try_block.data {
+                collect_try_lift_vars(inner, &mut lifted);
+            }
+            // (shadow_name, original_name) pairs + unique shadow ids.
+            let lift_id = TRY_LIFT_COUNTER.fetch_add(1, Ordering::Relaxed);
+            let lift_pairs: Vec<(String, String)> = lifted.iter().enumerate()
+                .map(|(k, (name, _))| (try_lift_shadow(name, lift_id * 1000 + k), name.clone()))
+                .collect();
+
+            let try_block_for_cg: Box<AstStmt> = if lift_pairs.is_empty() {
+                try_block.clone()
+            } else {
+                let mut cloned = (**try_block).clone();
+                if let AstStmtData::Compound(inner) = &mut cloned.data {
+                    insert_lift_mirrors(inner, &lift_pairs);
+                }
+                Box::new(cloned)
+            };
+            let try_cg = convert_stmt(&try_block_for_cg, class_infos);
             let finally_cg = finally_block.as_ref().map(|fb| convert_stmt(fb, class_infos));
 
             // Build the catch blocks: each Catch { param, body } becomes:
@@ -2116,17 +2285,41 @@ let mut catch_body: Vec<CgStmt> = Vec::new();
 
             // ── Build the full try/catch/finally pattern ──
             // {
+            //   volatile NPObject *__nupa_lift_x_N = NULL;   ← ARC unwind-lift
             //   jmp_buf __nupa_saved;
             //   memcpy(__nupa_saved, __nupa_exception_buf, sizeof(jmp_buf));
             //   volatile int __nupa_state = 0;
             //   if (setjmp(__nupa_exception_buf) != 0) { __nupa_state = 1; }
-            //   if (__nupa_state == 0) { <try_body> }
+            //   if (__nupa_state == 0) { <try_body with shadow mirrors> }
             //   <catch_body_if_state_1>
             //   memcpy(__nupa_exception_buf, __nupa_saved, sizeof(jmp_buf));
             //   <finally_block>
-            //   if (__nupa_state == 1) { longjmp(__nupa_exception_buf, 1); }
+            //   if (__nupa_state == 1) { <release lifted shadows>; longjmp(...); }
             // }
             let mut try_stmts: Vec<CgStmt> = Vec::new();
+
+            // volatile NPObject *__nupa_lift_x_N = NULL;   (before setjmp, so
+            // the shadow survives the longjmp frame restore — it lives in the
+            // frame setjmp returns into, not the one longjmp abandons)
+            for (shadow, _) in &lift_pairs {
+                try_stmts.push(CgStmt {
+                    kind: CgStmtKind::Decl, line, col,
+                    data: CgStmtData::Decl {
+                        decl_type: "volatile NPObject *".into(),
+                        name: shadow.clone(),
+                        init: Some(Box::new(CgExpr {
+                            kind: CgExprKind::Ident, type_str: None, line, col,
+                            data: CgExprData::Ident("NULL".into()),
+                        })),
+                        array_suffix: None,
+                        is_static: false,
+                        is_weak: false,
+                        is_block: false,
+                        next: vec![],
+                        attributes: Vec::new(),
+                    },
+                });
+            }
 
             // jmp_buf __nupa_saved;
             try_stmts.push(CgStmt {
@@ -2288,6 +2481,38 @@ let mut catch_body: Vec<CgStmt> = Vec::new();
                 try_stmts.push(f);
             }
 
+            // Unwind path ARC release: the longjmp below skips every
+            // scope-end nupa_release in the abandoned try frame, so release
+            // the lifted shadows here first (nil-safe; NULL shadows are
+            // no-ops, and each shadow mirrors the variable's LAST value).
+            for (shadow, _) in &lift_pairs {
+                try_stmts.push(CgStmt {
+                    kind: CgStmtKind::If, line, col,
+                    data: CgStmtData::If {
+                        cond: Box::new(CgExpr {
+                            kind: CgExprKind::Ident, type_str: None, line, col,
+                            data: CgExprData::Ident(shadow.clone()),
+                        }),
+                        then: Box::new(CgStmt {
+                            kind: CgStmtKind::Expr, line, col,
+                            data: CgStmtData::Expr(CgExpr {
+                                kind: CgExprKind::Call, type_str: None, line, col,
+                                data: CgExprData::Call {
+                                    name: "nupa_release".into(),
+                                    args: vec![CgExpr {
+                                        kind: CgExprKind::Ident, type_str: None, line, col,
+                                        data: CgExprData::Ident(shadow.clone()),
+                                    }],
+                                    vtable_class: None, alt_vtable_classes: vec![],
+                                    is_class_method: false, is_super: false, sel_const_name: None, method_index: None,
+                                },
+                            }),
+                        }),
+                        else_: None,
+                    },
+                });
+            }
+
             // if (__nupa_state == 1) { longjmp(__nupa_exception_buf, 1); }
             try_stmts.push(CgStmt {
                 kind: CgStmtKind::If, line, col,
@@ -2396,6 +2621,10 @@ let mut catch_body: Vec<CgStmt> = Vec::new();
                 },
             }
         }
+        // Deliberate catch-all: every AstStmtData variant is matched above, so this
+        // arm is currently unreachable. It stays as a net so a newly added variant
+        // degrades to a marked stub rather than a non-exhaustive-match build error.
+        #[allow(unreachable_patterns)]
         _ => CgStmt { kind: CgStmtKind::Expr, line, col, data: CgStmtData::Expr(CgExpr { kind: CgExprKind::Call, type_str: None, line, col, data: CgExprData::Call { name: "/* stub */".into(), args: Vec::new(), vtable_class: None, alt_vtable_classes: vec![], is_class_method: false, is_super: false, sel_const_name: None, method_index: None } }) },
     }
 }
@@ -2476,7 +2705,7 @@ fn convert_decl(ad: &AstDecl, class_infos: &std::collections::BTreeMap<String, C
                 // variables (`int (*cb)(int)` / fnptr typedefs) must stay
                 // plain C calls — `fn(4,5)`, never `->invoke`.
                 let is_fnptr = var_type.as_ref().map_or(false, |t| t.is_fn_ptr)
-                    || FNPtr_TYPEDEF_NAMES.get().map_or(false, |m| m.lock().unwrap().contains(&type_str));
+                    || FNPTR_TYPEDEF_NAMES.get().map_or(false, |m| m.lock().unwrap().contains(&type_str));
                 let is_block = !is_fnptr && (
                     var_type.as_ref().map_or(false, |t| t.is_block)
                         || type_str.contains("__nupa_block_header")
@@ -2486,7 +2715,7 @@ fn convert_decl(ad: &AstDecl, class_infos: &std::collections::BTreeMap<String, C
                     bv.get_or_insert_with(std::collections::HashSet::new).insert(name.clone());
                 }
             }
-            let (var_type, init, is_static, is_extern, is_const, is_block_qual, is_weak) = match &ad.data {
+            let (var_type, init, is_static, _is_extern, is_const, is_block_qual, is_weak) = match &ad.data {
                 AstDeclData::Variable { var_type, init, is_static, is_extern, is_const, is_block_qual, is_weak, .. } => (
                     var_type.as_ref().map(|t| ast_type_to_c_str(t)).unwrap_or_else(|| "int".into()),
                     init.as_ref().map(|i| Box::new(convert_expr(i, &class_infos))),
@@ -2535,7 +2764,7 @@ fn convert_decl(ad: &AstDecl, class_infos: &std::collections::BTreeMap<String, C
                     }
                     let fields = struct_fields.iter().map(|f| {
                         let mut fname = f.name.clone().unwrap_or_default();
-                        let mut ftype = match &f.data {
+                        let ftype = match &f.data {
                             AstDeclData::Variable { var_type, .. } => var_type.as_ref().map(|t| ast_type_to_c_str(t)).unwrap_or_else(|| "int".into()),
                             AstDeclData::Ivar { ivar_type, .. } => ivar_type.as_ref().map(|t| ast_type_to_c_str(t)).unwrap_or_else(|| "int".into()),
                             _ => "int".into(),
@@ -2577,7 +2806,7 @@ fn convert_decl(ad: &AstDecl, class_infos: &std::collections::BTreeMap<String, C
                     // resolution but must never be treated as block variables
                     // (a plain fnptr call is `fn(4,5)`, not `->invoke`).
                     if is_fnptr_typedef {
-                        if let Ok(mut guard) = FNPtr_TYPEDEF_NAMES.get_or_init(|| Mutex::new(std::collections::HashSet::new())).lock() {
+                        if let Ok(mut guard) = FNPTR_TYPEDEF_NAMES.get_or_init(|| Mutex::new(std::collections::HashSet::new())).lock() {
                             guard.insert(sn.clone());
                         }
                     }
@@ -3061,6 +3290,7 @@ pub fn ast_to_cg_unit(ast: &AstUnit, backend: Backend) -> CgUnit {
     CURRENT_BACKEND.store(backend as u8, Ordering::Relaxed);
     *block_vars() = Some(std::collections::HashSet::new());
     *block_defs() = String::new();  // reset block-expansion buffer
+    *emitted_methods() = Some(std::collections::HashSet::new());
     let mut selectors = Vec::new();
     let mut classes: Vec<CgClassMeta> = Vec::new();
     let mut decls: Vec<CgDecl> = Vec::new();
@@ -3174,7 +3404,7 @@ pub fn ast_to_cg_unit(ast: &AstUnit, backend: Backend) -> CgUnit {
                                 guard.insert(bn.clone(), flat);
                             }
                             if at.is_fn_ptr {
-                                if let Ok(mut guard) = FNPtr_TYPEDEF_NAMES.get_or_init(|| Mutex::new(std::collections::HashSet::new())).lock() {
+                                if let Ok(mut guard) = FNPTR_TYPEDEF_NAMES.get_or_init(|| Mutex::new(std::collections::HashSet::new())).lock() {
                                     guard.insert(bn.clone());
                                 }
                             }
@@ -4132,6 +4362,21 @@ pub fn ast_to_cg_unit(ast: &AstUnit, backend: Backend) -> CgUnit {
     }
 
     for (flat, info) in std::mem::take(&mut class_infos) {
+        // Record which `Owner_method` function bodies actually exist. A vtable
+        // slot can exist without an implementation — a method a class declares
+        // by conforming to a protocol, or one it declares but leaves to another
+        // TU — and those slots must initialise to NULL rather than reference a
+        // function that is never emitted (an undefined symbol at link time).
+        for (i, mname) in info.method_names.iter().enumerate() {
+            if info.is_class_methods.get(i).copied().unwrap_or(false) { continue; }
+            let has_body = info.method_bodies.get(i).map_or(false, |b| b.is_some());
+            if has_body {
+                let owner = info.method_owners.get(i).cloned().unwrap_or(flat.clone());
+                if let Some(set) = emitted_methods().as_mut() {
+                    set.insert(format!("{}_{}", owner, mname));
+                }
+            }
+        }
         classes.push(CgClassMeta {
             class_name: info.class_name,
             super_name: info.super_name.clone(),
@@ -4317,6 +4562,18 @@ method_names: info.method_names,
     CLASS_METHOD_METADATA.set(class_method_meta).unwrap();
 
     let mut unit = CgUnit { decls, filename: ast.filename.clone(), c_headers: Vec::new(), selectors, classes, global_instance_method_names };
+    // The authoritative record of which method function bodies exist: every
+    // `CgDeclData::Function` with a body. This covers paths that do not go
+    // through `ClassInfo::method_bodies` — notably @property-synthesised
+    // getters/setters — which the earlier `method_bodies`-based bookkeeping
+    // missed (leaving those vtable slots NULL and the program misbehaving).
+    if let Some(set) = emitted_methods().as_mut() {
+        for d in &unit.decls {
+            if let CgDeclData::Function { body: Some(_), .. } = &d.data {
+                set.insert(d.name.clone());
+            }
+        }
+    }
     rewrite_block_var_refs(&mut unit);
     unit
 }
@@ -4450,23 +4707,6 @@ fn rewrite_block_var_refs(unit: &mut CgUnit) {
 
 // ─── C code emission ─────────────────────────────────────────────────────────
 
-// Emit a function-pointer cast prefix wrapping the vtable member access, so
-// the dispatch uses the receiver's actual method signature, not the uniform
-// vtable field type (which may differ when two classes share a selector with
-// different param types, e.g. Buffer::get:(int) vs Table::get:(const char *)).
-// Returns true if a cast was emitted.
-fn emit_vtable_method_cast(out: &mut String, vc_flat: &str) -> bool {
-    if let Some(meta) = CLASS_METHOD_METADATA.get().and_then(|c| c.get(vc_flat)) {
-        // We need the method name to look up the signature, but we take
-        // the FIRST method for the class (any method works — the cast just
-        // needs to be the correct width for pointer-to-pointer assignment).
-        // Actually, we don't know the method name here. The cast is emitted
-        // in the caller where the method name is known.
-        return false;
-    }
-    false
-}
-
 // Emit: "((RETURN (*)(PARAMS))" — the opening of a function-pointer cast
 // wrapping the vtable member access. Returns true if a cast was emitted.
 fn emit_vtable_fp_cast(out: &mut String, vc_flat: &str, name: &str) -> bool {
@@ -4555,24 +4795,20 @@ fn emit_expr(e: &CgExpr, out: &mut String) {
             }
         }
         CgExprData::Binary { op_str, left, right } => {
-            // Omit parens for == / != to avoid -Wparentheses-equality from
-            // double-wrapping when used inside if()/while().  All other binary
-            // ops need parens to guarantee correct nesting inside adjacent ops.
-            if op_str == "==" || op_str == "!=" {
-                emit_expr(left, out);
-                out.push(' ');
-                out.push_str(op_str);
-                out.push(' ');
-                emit_expr(right, out);
-            } else {
-                out.push('(');
-                emit_expr(left, out);
-                out.push(' ');
-                out.push_str(op_str);
-                out.push(' ');
-                emit_expr(right, out);
-                out.push(')');
-            }
+            // Always parenthesise binary sub-expressions. Previously == and !=
+            // were emitted without parens (to avoid -Wparentheses-equality
+            // noise inside if()/while()), which silently changed precedence
+            // when a comparison appeared as an operand of an arithmetic chain:
+            // `a + b + (a != 0)` emitted as `((a + b) + a != 0)`. (bug #6)
+            // Clang's -Wparentheses warnings are suppressed by the pipeline's
+            // `-w`, and correctness beats warning cosmetics.
+            out.push('(');
+            emit_expr(left, out);
+            out.push(' ');
+            out.push_str(op_str);
+            out.push(' ');
+            emit_expr(right, out);
+            out.push(')');
         }
         CgExprData::Assign { target, value } => {
             emit_expr(target, out);
@@ -4592,7 +4828,7 @@ fn emit_expr(e: &CgExpr, out: &mut String) {
             let _ = write!(out, "({})", target_type);
             emit_expr(expr, out);
         }
-        CgExprData::Call { name, args, vtable_class, alt_vtable_classes, is_class_method, is_super, sel_const_name, method_index: _ } => {
+        CgExprData::Call { name, args, vtable_class, alt_vtable_classes: _, is_class_method, is_super, sel_const_name, method_index: _ } => {
             if *is_super {
                 let sel = sel_const_name.as_deref().unwrap_or("0");
                 let cls_flat = vtable_class.as_deref().map(|c| name_flat(c)).unwrap_or_else(|| "NPObject".to_string());
@@ -4869,11 +5105,15 @@ fn emit_stmt_inline(s: &CgStmt, out: &mut String) {
         }
         CgStmtData::Break => out.push_str("break;"),
         CgStmtData::Continue => out.push_str("continue;"),
-        CgStmtData::Decl { decl_type, name, init, is_static, next, .. } => {
+        CgStmtData::Decl { decl_type, name, init, array_suffix, is_static, next, .. } => {
             if *is_static { out.push_str("static "); }
             out.push_str(decl_type);
             out.push(' ');
             out.push_str(name);
+            // Array suffix (`[N]`) must be preserved in inline (block-body)
+            // declarations too — dropping it turned `char buf[128]` into
+            // `char buf` and corrupted every block-local array.
+            if let Some(suffix) = array_suffix { out.push_str(suffix); }
             if let Some(i) = init {
                 out.push_str(" = ");
                 emit_expr(i, out);
@@ -5077,7 +5317,7 @@ pub fn emit_stmt(s: &CgStmt, out: &mut String, indent: usize) {
                         Some((name.clone(), args.clone(), vc.clone(), is_class_method, is_super, sel_const_name.clone()))
                     } else { None }
                 });
-                if let Some((ref method_name, ref args, ref vc, is_class_method, is_super, sel_const_name)) = init_data {
+                if let Some((ref method_name, ref args, ref _vc, _is_class_method, _is_super, sel_const_name)) = init_data {
                     out.push_str(&ind);
                     if !args.is_empty() {
                             let tid = next_temp_id();
@@ -5705,7 +5945,52 @@ pub fn emit_unit_with_headers(unit: &CgUnit, c_headers: &[String], search_dirs: 
     // All vtable instances use this struct type, making dispatch via member access
     // type-safe regardless of which class the receiver belongs to.
     if any_has_instance {
+        // Cross-TU layout signature: the uniform vtable's member set comes from
+        // THIS translation unit's methods. When two TUs see different method
+        // sets, each compiles a DIFFERENT `struct nupa_vtable` layout while the
+        // linker weak-merges the vtable instances into one allocation — dispatch
+        // through the other TU's layout then reads the wrong slot (silent
+        // garbage or segfault). The signature travels INSIDE the vtable struct
+        // (first member) so it is weak-merged together with the instance that
+        // actually won; nupa_metaInit() compares the winner's stored signature
+        // against its own TU's compile-time signature and aborts with a clear
+        // message on mismatch instead of dispatching through a foreign layout.
+        let sig: u64 = vtable_layout_sig(&unit.global_instance_method_names);
+        let _ = write!(out, "/* vtable layout signature: {:016x} (methods: {}) */\n", sig, unit.global_instance_method_names.len());
+        // The diagnostic needs <stdio.h>, which a translation unit that only
+        // includes <nupa/runtime.h> may not pull in — and freestanding builds
+        // have no stdio at all. When the standard headers are absent we still
+        // need the failure to be loud, so fall back to __builtin_trap() (a
+        // compiler builtin, available in hosted and freestanding alike) rather
+        // than declaring stdio symbols this TU may not link against.
+        let has_stdio = c_headers.iter().any(|h| h.contains("stdio.h"));
+        let _ = write!(out, "__attribute__((weak)) void nupa_verify_vtable_sig(unsigned long long winner, unsigned long long mine, const char *method_list) {{\n");
+        let _ = write!(out, "    if (winner != mine) {{\n");
+        if has_stdio {
+            let _ = write!(out, "        fprintf(stderr,\n");
+            let _ = write!(out, "            \"nupa: fatal: vtable layout mismatch across translation units.\\n\"\n");
+            let _ = write!(out, "            \"  linked vtable sig %016llx, this translation unit sig %016llx\\n\"\n");
+            let _ = write!(out, "            \"\\n\"\n");
+            let _ = write!(out, "            \"Nupa builds one uniform 'struct nupa_vtable' per translation unit, from the\\n\"\n");
+            let _ = write!(out, "            \"instance methods that TU happens to see. Two TUs that see different method\\n\"\n");
+            let _ = write!(out, "            \"sets compile different layouts, but the linker weak-merges the vtable\\n\"\n");
+            let _ = write!(out, "            \"instances into one allocation - so dispatch reads the wrong slot.\\n\"\n");
+            let _ = write!(out, "            \"\\n\"\n");
+            let _ = write!(out, "            \"Re-running nupac does NOT help: the method sets really do differ. The usual\\n\"\n");
+            let _ = write!(out, "            \"cause is a method defined in an @implementation but absent from the shared\\n\"\n");
+            let _ = write!(out, "            \".nh, so only the TU holding the implementation sees it. Declare every\\n\"\n");
+            let _ = write!(out, "            \"method in the header, or build the affected classes as a single TU.\\n\"\n");
+            let _ = write!(out, "            \"See tests/multi_tu/ for worked examples of what does and does not link.\\n\"\n");
+            let _ = write!(out, "            \"\\nMethods known to this TU:\\n  %s\\n\",\n");
+            let _ = write!(out, "            (unsigned long long)winner, (unsigned long long)mine, method_list);\n");
+            let _ = write!(out, "        abort();\n");
+        } else {
+            let _ = write!(out, "        (void)winner; (void)mine; (void)method_list;\n");
+            let _ = write!(out, "        __builtin_trap();\n");
+        }
+        let _ = write!(out, "    }}\n}}\n\n");
         let _ = write!(out, "struct nupa_vtable {{\n");
+        let _ = write!(out, "    unsigned long long __sig;\n");
         for mname in &unit.global_instance_method_names {
             let (_, ptr_type) = METHOD_METADATA.get().unwrap().get(mname.as_str()).unwrap();
             // ptr_type is "return_type (*)(params)". Insert mname after the "*".
@@ -5813,18 +6098,36 @@ pub fn emit_unit_with_headers(unit: &CgUnit, c_headers: &[String], search_dirs: 
 
     // Instance vtable instances (per-class typed, with designated initializers)
     section_comment(&mut out, comments, "Section 10 · Vtable & metadata instances");
+    // Same signature the struct layout above was built for (kept in sync by
+    // construction — both derive from `global_instance_method_names`).
+    let vtable_sig: u64 = vtable_layout_sig(&unit.global_instance_method_names);
     for cm in &unit.classes {
         let flat_cn = name_flat(&cm.class_name);
         if comments {
             let _ = writeln!(out, "/* VTable instance: {} */", cm.class_name);
         }
         let _ = write!(out, "__attribute__((weak)) struct nupa_vtable {} = {{\n", meta_symbol("VTABLE_", &flat_cn));
+        // Stamp the layout signature this instance was built for, so whichever
+        // copy of this instance wins the linker's weak merge also carries the
+        // layout it was actually initialized against.
+        let _ = write!(out, "    .__sig = 0x{:016x}ULL,\n", vtable_sig);
         for mname in &unit.global_instance_method_names {
             if let Some(pos) = cm.method_names.iter().position(|n| n == mname) {
                 if !cm.is_class_methods[pos] {
                     let owner = cm.method_owners.get(pos).cloned().unwrap_or_else(|| flat_cn.clone());
-                    let (_, ptr_type) = METHOD_METADATA.get().unwrap().get(mname.as_str()).unwrap();
-                    let _ = write!(out, "    .{} = ({}){}_{},\n", mname, ptr_type, owner, mname);
+                    // Only name the implementation when one was actually
+                    // emitted in this unit. A slot may exist for a method the
+                    // class only declares (e.g. by conforming to a protocol)
+                    // or inherits without overriding; referencing `Owner_method`
+                    // then would be an undefined symbol at link time. Keeping
+                    // the slot (as NULL) is what preserves a stable vtable
+                    // layout across translation units.
+                    if method_is_emitted(&owner, mname) {
+                        let (_, ptr_type) = METHOD_METADATA.get().unwrap().get(mname.as_str()).unwrap();
+                        let _ = write!(out, "    .{} = ({}){}_{},\n", mname, ptr_type, owner, mname);
+                    } else {
+                        let _ = write!(out, "    .{} = NULL,\n", mname);
+                    }
                 } else {
                     let _ = write!(out, "    .{} = NULL,\n", mname);
                 }
@@ -5872,6 +6175,26 @@ pub fn emit_unit_with_headers(unit: &CgUnit, c_headers: &[String], search_dirs: 
         let _ = write!(out, "NPClass {};\n", meta_symbol("CLASS_", &name_flat(&cm.class_name)));
     }
     if !unit.classes.is_empty() { out.push('\n'); }
+
+    // Cross-TU vtable layout check. This lives in a per-TU constructor (not
+    // in nupa_metaInit, which is weak-merged so only one TU's copy runs):
+    // every TU's constructor is registered with the loader and runs, so each
+    // translation unit validates its own compiled layout. Each vtable
+    // instance carries the signature it was initialized for as its first
+    // member; if the copy the linker selected was built from a different
+    // method set, dispatch through this TU's `struct nupa_vtable` layout
+    // would read the wrong slot — abort with a clear message instead.
+    if any_has_instance && !unit.classes.is_empty() {
+        let method_list: Vec<String> = unit.global_instance_method_names.clone();
+        let _ = write!(out, "__attribute__((constructor)) static void __nupa_vtable_layout_check(void) {{\n");
+        for cm in &unit.classes {
+            if cm.method_names.is_empty() && cm.super_name.is_none() { continue; }
+            let vt_sym = meta_symbol("VTABLE_", &name_flat(&cm.class_name));
+            let _ = write!(out, "    nupa_verify_vtable_sig((&{})->__sig, 0x{:016x}ULL, \"{} | class {} | tu {}\");\n",
+                vt_sym, vtable_sig, method_list.join(" "), cm.class_name, unit.filename);
+        }
+        let _ = write!(out, "}}\n\n");
+    }
 
     // nupa_metaInit()
     if !unit.classes.is_empty() {
@@ -6120,4 +6443,84 @@ pub fn emit_bridge_header(unit: &CgUnit) -> String {
     }
     out.push_str("#endif /* NUPA_BRIDGE_H */\n");
     out
+}
+#[cfg(test)]
+mod vtable_sig_tests {
+    use super::*;
+
+    /// The layout signature is a pure FNV-1a hash over the sorted instance
+    /// method names, which is exactly what `emit_unit_with_headers` stamps into
+    /// the vtable struct and every vtable instance. Two units agree iff they
+    /// compiled the same method set.
+    #[test]
+    fn differing_method_sets_produce_differing_signatures() {
+        let a = vtable_layout_sig(&["init".to_string(), "show".to_string()]);
+        let b = vtable_layout_sig(&["init".to_string(), "show".to_string(), "extra".to_string()]);
+        assert_ne!(a, b, "different method sets must yield different vtable layout signatures");
+    }
+
+    #[test]
+    fn identical_method_sets_produce_identical_signatures() {
+        let a = vtable_layout_sig(&["init".to_string(), "show".to_string()]);
+        let b = vtable_layout_sig(&["init".to_string(), "show".to_string()]);
+        assert_eq!(a, b);
+    }
+
+    /// The signature must travel inside the vtable struct (first member) so it
+    /// is weak-merged together with the instance that actually won the link,
+    /// and the check must live in a per-TU constructor — `nupa_metaInit` is
+    /// weak-merged, so only one TU's copy would ever run.
+    #[test]
+    fn signature_travels_in_vtable_and_check_runs_per_tu() {
+        // Exercise the real emitter over a tiny class so the assertions below
+        // run against actual generated C, not a hand-written fixture.
+        // Build the uniform method set the pipeline would collect for a unit
+        // containing `@interface Probe : NPObject` with a single `-ping`,
+        // plus that class so the vtable scaffolding is actually emitted.
+        let unit = CgUnit {
+            decls: Vec::new(),
+            filename: "probe.np".to_string(),
+            c_headers: vec!["#include <stdio.h>".to_string()],
+            selectors: Vec::new(),
+            classes: vec![CgClassMeta {
+                class_name: "Probe".to_string(),
+                super_name: Some("NPObject".to_string()),
+                method_names: vec!["ping".to_string()],
+                method_sel_names: vec!["ping".to_string()],
+                is_class_methods: vec![false],
+                method_return_types: vec!["void".to_string()],
+                method_params_list: vec![vec![]],
+                method_owners: vec!["Probe".to_string()],
+                vtable_indices: vec![2],
+                ivar_types: Vec::new(),
+                ivar_names: Vec::new(),
+                ivar_weak: Vec::new(),
+                properties: Vec::new(),
+                has_impl: true,
+            }],
+            global_instance_method_names: vec![
+                "dealloc".into(), "init".into(), "ping".into(), "release".into(), "retain".into(),
+            ],
+        };
+        // The emitter needs METHOD_METADATA populated; seed it once for this
+        // test binary. `set` is idempotent from the test's point of view.
+        let _ = METHOD_METADATA.set(HashMap::from([
+            ("dealloc".to_string(), (0usize, "void (*)(NPObject *, SEL)".to_string())),
+            ("init".to_string(), (0usize, "NPObject * (*)(NPObject *, SEL)".to_string())),
+            ("ping".to_string(), (0usize, "void (*)(NPObject *, SEL)".to_string())),
+            ("release".to_string(), (0usize, "void (*)(NPObject *, SEL)".to_string())),
+            ("retain".to_string(), (0usize, "NPObject * (*)(NPObject *, SEL)".to_string())),
+        ]));
+        let headers = unit.c_headers.clone();
+        let c = emit_unit_with_headers(&unit, &headers, &[], false, Backend::Clang, false);
+        assert!(
+            c.contains("unsigned long long __sig;"),
+            "vtable struct must carry a __sig member so it merges with the instance"
+        );
+        assert!(
+            c.contains("__attribute__((constructor)) static void __nupa_vtable_layout_check(void)"),
+            "the layout check must live in a per-TU constructor, not in weak-merged nupa_metaInit"
+        );
+        assert!(c.contains("nupa_verify_vtable_sig"), "the verifier must be emitted");
+    }
 }

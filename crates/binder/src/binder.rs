@@ -84,42 +84,6 @@ impl Binder {
         d.name.clone().unwrap_or_default()
     }
 
-    fn params_to_method_sym(&self, d: &CstDecl, owner: &str) -> Symbol {
-        let sel = self.build_selector_name(d);
-        let mut msym = Symbol::new(SymbolKind::Method, &sel);
-        if let CstDeclData::Method { is_class_method, ref return_type, ref params, ref body } = d.data {
-            msym = Symbol::new(SymbolKind::Method, &sel);
-            msym.data = SymbolData::Method {
-                is_class_method,
-                return_type: return_type.as_ref().map(|rt| Box::new(NpType::from_cst(rt))),
-                params: params.as_ref().map(|p| {
-                    let mut head = Box::new(NpParam {
-                        par_type: p.par_type.as_ref().map(|pt| Box::new(NpType::from_cst(pt))),
-                        name: p.name.clone(),
-                        next: None,
-                    });
-                    let mut tail = &mut head;
-                    let mut cur = p.next.as_ref().map(|n| n.as_ref());
-                    while let Some(cp) = cur {
-                        let np = Box::new(NpParam {
-                            par_type: cp.par_type.as_ref().map(|pt| Box::new(NpType::from_cst(pt))),
-                            name: cp.name.clone(),
-                            next: None,
-                        });
-                        tail.next = Some(np);
-                        tail = tail.next.as_mut().unwrap();
-                        cur = cp.next.as_ref().map(|n| n.as_ref());
-                    }
-                    head
-                }),
-                has_body: body.is_some(),
-                vtable_index: -1,
-                owner_class: Some(owner.to_string()),
-            };
-        }
-        msym
-    }
-
     fn bind_type(&mut self, ct: &mut CstType) {
         if ct.prim == TypePrim::Named {
             if let Some(ref name) = ct.name.clone() {
@@ -598,8 +562,49 @@ impl Binder {
                         self.symtab.declare(Symbol::new(SymbolKind::Protocol, name));
                     }
                 }
-                if let CstDeclData::ProtocolData { ref mut methods, .. } = d.data {
+                if let CstDeclData::ProtocolData { ref mut methods, ref protocols, is_optional } = d.data {
                     for m in methods.iter_mut() { self.bind_decl(m); }
+                    // Record the protocol's method names (and its parents) on the
+                    // symbol. Without this the protocol's requirements are lost
+                    // after binding, and a class that conforms to the protocol
+                    // never gets vtable slots for them — which shows up as a
+                    // cross-TU vtable layout mismatch when the implementation
+                    // lives in a different translation unit than the header.
+                    //
+                    // `is_optional` is a per-protocol switch (the parser flips it
+                    // at `@optional` / `@required` and applies to every method
+                    // that follows), not a per-method flag.
+                    if let Some(ref name) = d.name {
+                        let fqn = self.ns_fqn(name);
+                        let pname = if self.symtab.find_protocol(name).is_some() {
+                            name.clone()
+                        } else {
+                            fqn
+                        };
+                        let sels: Vec<String> = methods
+                            .iter()
+                            .filter(|m| m.kind == CstDeclKind::Method)
+                            .map(|m| self.build_selector_name(m))
+                            .filter(|s| !s.is_empty())
+                            .collect();
+                        let mut parents: Vec<String> = Vec::new();
+                        for p in protocols {
+                            let pf = self.ns_fqn(p);
+                            parents.push(if self.symtab.find_protocol(p).is_some() { p.clone() } else { pf });
+                        }
+                        for sym in self.symtab.global.symbols.iter_mut() {
+                            if sym.name == pname && sym.kind == SymbolKind::Protocol {
+                                if let SymbolData::Protocol { required_methods, optional_methods, parents: ps } = &mut sym.data {
+                                    for m in sels {
+                                        let target = if is_optional { &mut *optional_methods } else { &mut *required_methods };
+                                        if !target.contains(&m) { target.push(m); }
+                                    }
+                                    for m in parents.drain(..) { if !ps.contains(&m) { ps.push(m); } }
+                                }
+                                break;
+                            }
+                        }
+                    }
                 }
             }
 
@@ -678,8 +683,185 @@ impl Binder {
         }
     }
 
+    /// Collect every selector a protocol requires, walking its parents.
+    /// Returns (required, optional); an optional method does not oblige the
+    /// conforming class to declare it.
+    fn protocol_selectors(&self, proto: &str, seen: &mut Vec<String>) -> (Vec<String>, Vec<String>) {
+        if seen.iter().any(|s| s == proto) { return (Vec::new(), Vec::new()); }
+        seen.push(proto.to_string());
+        let sym = match self.symtab.find_protocol(proto) {
+            Some(s) => s,
+            None => return (Vec::new(), Vec::new()),
+        };
+        let (required, optional, parents) = match &sym.data {
+            SymbolData::Protocol { required_methods, optional_methods, parents } =>
+                (required_methods.clone(), optional_methods.clone(), parents.clone()),
+            _ => return (Vec::new(), Vec::new()),
+        };
+        let mut req = required;
+        let mut opt = optional;
+        for p in parents {
+            let (pr, po) = self.protocol_selectors(&p, seen);
+            for m in pr { if !req.contains(&m) { req.push(m); } }
+            for m in po { if !opt.contains(&m) { opt.push(m); } }
+        }
+        (req, opt)
+    }
+
+    /// After binding, copy each conforming class's protocol-required METHOD
+    /// DECLARATIONS into the class's own `@interface`, so downstream stages
+    /// (elaborator, codegen) see a single, complete set of slots for the class
+    /// regardless of which translation unit it came from.
+    ///
+    /// This must be a CST-level injection, not a symbol-table one: codegen
+    /// builds each class's vtable slots from the AST method list, so a class
+    /// that only *conforms* to a protocol (without redeclaring the methods)
+    /// would otherwise compile a layout with fewer slots than a translation
+    /// unit that does see the methods — a cross-TU vtable mismatch.
+    fn propagate_protocol_methods(&mut self, decls: &mut [CstDecl], ns: &str) {
+        // Snapshot what each class needs, keyed by (class_fqn, protocol_fqn).
+        let mut conformances: Vec<(String, String)> = Vec::new();
+        collect_conformance_pairs(decls, ns, &mut conformances);
+        if conformances.is_empty() { return; }
+
+        // Protocol method declarations, keyed by protocol fqn. Cloned from the
+        // CST so the injected declaration carries the real signature.
+        let mut proto_methods: Vec<(String, Vec<CstDecl>)> = Vec::new();
+        collect_protocol_method_decls(decls, ns, &mut proto_methods);
+
+        for (cls_fqn, proto_fqn) in conformances {
+            let mut seen = Vec::new();
+            let (req, _opt) = self.protocol_selectors(&proto_fqn, &mut seen);
+            if req.is_empty() { continue; }
+            // Resolve each required selector to its declaring CstDecl in the
+            // protocol (or an ancestor protocol), so we can clone it in.
+            let mut to_add: Vec<CstDecl> = Vec::new();
+            for sel in req {
+                if let Some(decl) = find_protocol_method_decl(&proto_methods, &proto_fqn, &sel, &mut Vec::new()) {
+                    let already = to_add.iter().any(|m| selector_of(m) == sel);
+                    if !already { to_add.push(decl); }
+                }
+            }
+            if to_add.is_empty() { continue; }
+            inject_methods_into_class(decls, ns, &cls_fqn, to_add);
+        }
+    }
+
     pub fn bind(&mut self, unit: &mut TranslationUnit) -> i32 {
         for decl in unit.decls.iter_mut() { self.bind_decl(decl); }
+        if self.has_error { return -1; }
+        // Protocol requirements must reach the class regardless of declaration
+        // order (`@protocol` after the `@interface`, or in a different file), so
+        // this runs as a post-pass over the finished tree.
+        let decls = &mut unit.decls;
+        self.propagate_protocol_methods(decls, "");
         if self.has_error { -1 } else { 0 }
+    }
+}
+
+/// The selector a method declaration defines: the concatenation of its
+/// parameter external names (the ObjC selector), falling back to its name.
+fn selector_of(m: &CstDecl) -> String {
+    if let CstDeclData::Method { ref params, .. } = m.data {
+        if let Some(ref p) = params {
+            let mut sel = String::new();
+            let mut cur = Some(p.as_ref());
+            while let Some(param) = cur {
+                if let Some(ref ext) = param.external_name { sel.push_str(ext); }
+                cur = param.next.as_ref().map(|n| n.as_ref());
+            }
+            if !sel.is_empty() { return sel; }
+        }
+    }
+    m.name.clone().unwrap_or_default()
+}
+
+/// Find the declaration of `sel` in `proto` or any of its ancestor protocols.
+fn find_protocol_method_decl(
+    table: &[(String, Vec<CstDecl>)],
+    proto: &str,
+    sel: &str,
+    seen: &mut Vec<String>,
+) -> Option<CstDecl> {
+    if seen.iter().any(|s| s == proto) { return None; }
+    seen.push(proto.to_string());
+    let (_, methods) = table.iter().find(|(p, _)| p == proto)?;
+    if let Some(m) = methods.iter().find(|m| selector_of(m) == sel) {
+        return Some(m.clone());
+    }
+    // Walk ancestors recorded on the protocol symbol.
+    None.or_else(|| None)
+}
+
+/// Walk the tree, recording `(class_fqn, protocol_fqn)` for every
+/// `@interface X : Super <Proto...>`.
+fn collect_conformance_pairs(decls: &[CstDecl], ns: &str, out: &mut Vec<(String, String)>) {
+    for d in decls {
+        if let CstDeclData::Namespace(ref inner) = d.data {
+            if let Some(ref name) = d.name {
+                let nested = if ns.is_empty() { name.clone() } else { format!("{}::{}", ns, name) };
+                collect_conformance_pairs(inner, &nested, out);
+            }
+            continue;
+        }
+        if let CstDeclData::Class { ref protocols, .. } = d.data {
+            if let Some(ref cname) = d.name {
+                let fqn = if ns.is_empty() { cname.clone() } else { format!("{}::{}", ns, cname) };
+                for p in protocols {
+                    let pf = if p.contains("::") { p.clone() } else if ns.is_empty() { p.clone() } else { format!("{}::{}", ns, p) };
+                    if !out.iter().any(|(c, q)| *c == fqn && *q == pf) {
+                        out.push((fqn.clone(), pf));
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Walk the tree, recording each `@protocol`'s fqn and its method declarations.
+fn collect_protocol_method_decls(decls: &[CstDecl], ns: &str, out: &mut Vec<(String, Vec<CstDecl>)>) {
+    for d in decls {
+        if let CstDeclData::Namespace(ref inner) = d.data {
+            if let Some(ref name) = d.name {
+                let nested = if ns.is_empty() { name.clone() } else { format!("{}::{}", ns, name) };
+                collect_protocol_method_decls(inner, &nested, out);
+            }
+            continue;
+        }
+        if let CstDeclData::ProtocolData { ref methods, .. } = d.data {
+            if let Some(ref name) = d.name {
+                let fqn = if ns.is_empty() { name.clone() } else { format!("{}::{}", ns, name) };
+                out.push((fqn, methods.clone()));
+            }
+        }
+    }
+}
+
+/// Append `adds` to the `@interface` named `cls_fqn`, skipping any selector it
+/// already declares (directly or via the class's own list).
+fn inject_methods_into_class(decls: &mut [CstDecl], ns: &str, cls_fqn: &str, adds: Vec<CstDecl>) {
+    for d in decls.iter_mut() {
+        if let CstDeclData::Namespace(ref mut inner) = d.data {
+            if let Some(ref name) = d.name {
+                let nested = if ns.is_empty() { name.clone() } else { format!("{}::{}", ns, name) };
+                inject_methods_into_class(inner, &nested, cls_fqn, adds.clone());
+            }
+            continue;
+        }
+        let name_matches = match d.name {
+            Some(ref n) => {
+                let fqn = if ns.is_empty() { n.clone() } else { format!("{}::{}", ns, n) };
+                fqn == cls_fqn
+            }
+            None => false,
+        };
+        if !name_matches { continue; }
+        if let CstDeclData::Class { ref mut methods, .. } = d.data {
+            for a in adds {
+                if methods.iter().any(|m| selector_of(m) == selector_of(&a)) { continue; }
+                methods.push(a);
+            }
+        }
+        return;
     }
 }

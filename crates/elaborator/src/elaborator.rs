@@ -270,7 +270,7 @@ impl Elaborator {
                         }
                     }
                 }
-                let mut ae = AstExpr {
+                let ae = AstExpr {
                     kind: AstExprKind::MsgSend, expr_type: None, line, col,
                     data: AstExprData::MsgSend {
                         receiver: Box::new(if let Some(ref fqn) = receiver_class_name {
@@ -397,16 +397,37 @@ impl Elaborator {
         if object.kind == CstExprKind::Self_ || object.kind == CstExprKind::Super {
             if let Some(st) = &self.symtab {
                 if let Some(cls) = &self.current_class_sym {
-                    if let Some(csym) = st.find_class(cls) {
-                        if let SymbolData::Class { ref ivars, ref properties, .. } = csym.data {
-                            for iv in ivars {
-                                if iv == property {
-                                    return AstExpr {
-                                        kind: AstExprKind::IvarRef, expr_type: None, line, col,
-                                        data: AstExprData::IvarRef { ivar: Some(property.to_string()), cls: Some(cls.clone()), obj: Box::new(AstExpr { kind: AstExprKind::Self_, expr_type: None, line, col, data: AstExprData::VarRef { sym: None, name: "self".into() } }) },
-                                    };
-                                }
+                    // Walk the superclass chain: a subclass method may reference
+                    // an ivar inherited from a base class (`self->_handle` where
+                    // `_handle` lives on the base). Without the walk the ivar
+                    // fell through to an untyped PropRef and codegen emitted a
+                    // bare `self->_handle` with the wrong struct cast (bug #3).
+                    let mut cur = st.find_class(cls);
+                    let mut owner_cls: Option<String> = None;
+                    let mut found_ivar = false;
+                    while let Some(csym) = cur {
+                        if let SymbolData::Class { ref ivars, ref superclass, .. } = csym.data {
+                            if ivars.iter().any(|iv| iv == property) {
+                                owner_cls = Some(csym.name.clone());
+                                found_ivar = true;
+                                break;
                             }
+                            cur = superclass.as_ref().and_then(|s| st.find_class(s));
+                        } else {
+                            break;
+                        }
+                    }
+                    if found_ivar {
+                        let owner = owner_cls.unwrap_or_else(|| cls.clone());
+                        return AstExpr {
+                            kind: AstExprKind::IvarRef, expr_type: None, line, col,
+                            data: AstExprData::IvarRef { ivar: Some(property.to_string()), cls: Some(owner), obj: Box::new(AstExpr { kind: AstExprKind::Self_, expr_type: None, line, col, data: AstExprData::VarRef { sym: None, name: "self".into() } }) },
+                        };
+                    }
+                    // Not an ivar — check properties on this class (properties
+                    // are not inherited through this path yet).
+                    if let Some(csym) = st.find_class(cls) {
+                        if let SymbolData::Class { ref properties, .. } = csym.data {
                             for p in properties {
                                 if p == property {
                                     // ObjC instances are always `Type *` (pointer to

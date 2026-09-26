@@ -9,3 +9,4 @@ nupa-ast = { path = "../ast" }
 nupa-symbol = { path = "../symbol" }
 nupa-elaborator = { path = "../elaborator" }
 attrs = { path = "../attrs" }
+nupa-ownership = { path = "../ownership" }
